@@ -31,8 +31,22 @@ jobs:
           }
           "NEXUSP2P_VERSION=$($Matches.version)" >> $env:GITHUB_ENV
 
+      - name: Build
+        run: dotnet build NexusP2P.sln --configuration Release --nologo
+
       - name: Test
-        run: dotnet test NexusP2P.sln --configuration Release --nologo
+        shell: pwsh
+        run: |
+          $projects = @(
+            'tests/NexusP2P.Core.Tests/NexusP2P.Core.Tests.csproj',
+            'tests/NexusP2P.Transfer.Tests/NexusP2P.Transfer.Tests.csproj',
+            'tests/NexusP2P.Agent.Tests/NexusP2P.Agent.Tests.csproj',
+            'tests/NexusP2P.Desktop.Tests/NexusP2P.Desktop.Tests.csproj'
+          )
+          foreach ($project in $projects) {
+            dotnet test $project --configuration Release --no-build --nologo
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
 
       - name: Build portable Windows package
         shell: bash
