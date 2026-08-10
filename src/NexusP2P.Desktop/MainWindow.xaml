@@ -237,6 +237,31 @@
 
                         <Separator Margin="0,20,0,16" />
 
+                        <TextBlock Text="软件更新" FontWeight="SemiBold" FontSize="14"
+                                   Margin="0,0,0,8" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock x:Name="UpdateVersionText" FontSize="13" />
+                                <TextBlock x:Name="UpdateStatusText" Style="{StaticResource Caption}"
+                                           Margin="0,3,16,0"
+                                           Text="从 GitHub Releases 获取正式版本。" />
+                            </StackPanel>
+                            <Button x:Name="UpdateButton" Grid.Column="1"
+                                    Content="检查更新" Style="{StaticResource SecondaryButton}"
+                                    HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    Click="OnCheckUpdate" />
+                        </Grid>
+                        <ProgressBar x:Name="UpdateProgressBar"
+                                     Style="{StaticResource TransferProgress}"
+                                     Margin="0,12,0,0" Maximum="1"
+                                     Visibility="Collapsed" />
+
+                        <Separator Margin="0,20,0,16" />
+
                         <TextBlock Text="关于" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,8" />
                         <TextBlock Style="{StaticResource Caption}"
                                    Text="传输内容用 AES-256-GCM 加密，完整性由 SHA-256 Merkle 树逐分片校验。断线自动重连 3 次；进度按内容记录，关掉程序重开也能接着传。" />

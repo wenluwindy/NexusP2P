@@ -10,6 +10,25 @@ nexusp2p-signaling.exe  信令服务器（只需要一台跑，或者用你自�
 start-signaling.cmd     局域网对测时用它起信令服务器（会自动填好本机 IP）
 ```
 
+## 软件更新与安装包
+
+桌面版的「设置 → 软件更新」从项目的 GitHub Releases 检查正式版本。发布时使用
+`v主版本.次版本.修订号` 标签（例如 `v1.1.0`），Release 必须包含同版本的安装器：
+
+```text
+NexusP2P-Setup-1.1.0-win-x64.exe
+```
+
+推送符合格式的标签后，GitHub Actions 会测试项目、生成便携 ZIP 和 Inno Setup
+安装器，并创建 Release。手动打安装器时先运行 `packaging/package.sh win`，再运行：
+
+```powershell
+.\packaging\build-installer.ps1 -Version 1.1.0
+```
+
+安装器按当前 Windows 用户安装到 `%LOCALAPPDATA%\Programs\NexusP2P`。以后从设置页
+下载的新安装器会复用该目录并覆盖升级。
+
 图形界面和命令行是**两个独立的程序**，功能完全一样（同一套传输内核），
 用哪个都行、也可以一端用图形界面另一端用命令行。
 

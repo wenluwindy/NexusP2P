@@ -19,6 +19,7 @@
     -->
     <AssemblyName>NexusP2P-Desktop</AssemblyName>
     <RootNamespace>NexusP2P.Desktop</RootNamespace>
+    <Version>1.0.0</Version>
 
     <!-- WPF 需要 -windows 目标框架；Directory.Build.props 里的 net9.0 在这里被覆盖 -->
     <TargetFramework>net9.0-windows</TargetFramework>

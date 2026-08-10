@@ -1,0 +1,57 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Read version from tag
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_name }}" -notmatch '^v(?<version>\d+\.\d+\.\d+)$') {
+            throw "Release tag must be vMAJOR.MINOR.PATCH."
+          }
+          "NEXUSP2P_VERSION=$($Matches.version)" >> $env:GITHUB_ENV
+
+      - name: Test
+        run: dotnet test NexusP2P.sln --configuration Release --nologo
+
+      - name: Build portable Windows package
+        shell: bash
+        run: ./packaging/package.sh win
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress --yes
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: ./packaging/build-installer.ps1 -Version $env:NEXUSP2P_VERSION
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" `
+            "dist/NexusP2P-Setup-$env:NEXUSP2P_VERSION-win-x64.exe" `
+            "dist/nexusp2p-win-x64.zip" `
+            --repo "${{ github.repository }}" `
+            --title "NexusP2P $env:NEXUSP2P_VERSION" `
+            --generate-notes

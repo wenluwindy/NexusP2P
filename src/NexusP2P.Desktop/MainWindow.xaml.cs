@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -8,6 +9,7 @@ using Microsoft.Win32;
 using NexusP2P.Agent;
 using NexusP2P.Agent.Settings;
 using NexusP2P.Agent.Transfers;
+using NexusP2P.Desktop.Updates;
 
 namespace NexusP2P.Desktop;
 
@@ -23,9 +25,14 @@ public partial class MainWindow : Window, IDisposable
     private readonly App _app = (App)Application.Current;
     private readonly TransferManager _manager;
     private readonly TrayPresence _tray;
+    private readonly UpdateService _updateService = new();
+    private readonly CancellationTokenSource _updateCts = new();
 
     private string? _selectedPath;
+    private UpdateRelease? _availableUpdate;
+    private string? _downloadedInstallerPath;
     private AgentSettings _settings;
+    private bool _updateBusy;
     private bool _disposed;
 
     /// <summary>「程序缩到托盘了」这句提示只说一次，不必每次关窗都弹。</summary>
@@ -64,6 +71,7 @@ public partial class MainWindow : Window, IDisposable
         }
         SignalingInput.Text = _app.Options.SignalingOrigin;
         ConfigPathText.Text = $"配置文件：{AgentConfigFile.DefaultPath}";
+        UpdateVersionText.Text = $"当前版本 {UpdateService.CurrentVersion.ToString(3)}";
 
         // 设置文件损坏时如实说明，而不是默默用了默认值
         if (_app.Settings.LastLoadWarning is { } warning)
@@ -307,6 +315,136 @@ public partial class MainWindow : Window, IDisposable
         _app.Settings.Save(_settings);
     }
 
+    private async void OnCheckUpdate(object sender, RoutedEventArgs e)
+    {
+        if (_updateBusy)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_downloadedInstallerPath is { } installer && File.Exists(installer))
+            {
+                StartInstaller(installer);
+                return;
+            }
+
+            if (_availableUpdate is { } release)
+            {
+                await DownloadAndInstallAsync(release);
+                return;
+            }
+
+            await CheckForUpdateAsync();
+        }
+        catch (OperationCanceledException) when (_updateCts.IsCancellationRequested)
+        {
+            // 窗口退出时取消网络操作，不再更新已经销毁的界面。
+        }
+        catch (Exception ex) when (
+            ex is HttpRequestException or IOException or UnauthorizedAccessException or Win32Exception)
+        {
+            UpdateStatusText.Text = $"更新失败：{DescribeUpdateError(ex)}";
+            UpdateButton.Content = _availableUpdate is null ? "重新检查" : "重新下载";
+            UpdateProgressBar.Visibility = Visibility.Collapsed;
+        }
+        finally
+        {
+            _updateBusy = false;
+            if (!_disposed)
+            {
+                UpdateButton.IsEnabled = true;
+            }
+        }
+    }
+
+    private async Task CheckForUpdateAsync()
+    {
+        _updateBusy = true;
+        UpdateButton.IsEnabled = false;
+        UpdateButton.Content = "正在检查";
+        UpdateStatusText.Text = "正在连接 GitHub Releases…";
+        UpdateProgressBar.Visibility = Visibility.Collapsed;
+
+        var release = await _updateService.CheckAsync(
+            UpdateService.CurrentVersion,
+            _updateCts.Token);
+
+        if (release is null)
+        {
+            UpdateStatusText.Text = "当前已是最新正式版本。";
+            UpdateButton.Content = "再次检查";
+            return;
+        }
+
+        _availableUpdate = release;
+        var size = release.Size > 0 ? $"，{FormatSize(release.Size)}" : string.Empty;
+        UpdateStatusText.Text = $"发现新版本 {release.Tag}{size}。";
+        UpdateButton.Content = "下载并安装";
+    }
+
+    private async Task DownloadAndInstallAsync(UpdateRelease release)
+    {
+        _updateBusy = true;
+        UpdateButton.IsEnabled = false;
+        UpdateButton.Content = "正在下载";
+        UpdateStatusText.Text = $"正在下载 {release.Tag}…";
+        UpdateProgressBar.Value = 0;
+        UpdateProgressBar.Visibility = Visibility.Visible;
+
+        var progress = new Progress<UpdateDownloadProgress>(value =>
+        {
+            UpdateProgressBar.Value = value.Fraction;
+            UpdateStatusText.Text = value.TotalBytes > 0
+                ? $"正在下载 {release.Tag}：{value.Percentage}  " +
+                  $"{FormatSize(value.DownloadedBytes)} / {FormatSize(value.TotalBytes)}"
+                : $"正在下载 {release.Tag}：{FormatSize(value.DownloadedBytes)}";
+        });
+
+        _downloadedInstallerPath = await _updateService.DownloadAsync(
+            release,
+            progress,
+            _updateCts.Token);
+
+        UpdateProgressBar.Value = 1;
+        UpdateStatusText.Text = "下载完成，正在打开安装程序…";
+        UpdateButton.Content = "打开安装程序";
+        StartInstaller(_downloadedInstallerPath);
+    }
+
+    private void StartInstaller(string installerPath)
+    {
+        if (_manager.IsBusy)
+        {
+            UpdateStatusText.Text = "安装程序已下载。请在当前传输结束后点击“打开安装程序”。";
+            UpdateButton.Content = "打开安装程序";
+            return;
+        }
+
+        using var process = Process.Start(new ProcessStartInfo(installerPath)
+        {
+            UseShellExecute = true,
+            WorkingDirectory = Path.GetDirectoryName(installerPath),
+        });
+
+        if (process is null)
+        {
+            throw new IOException("Windows 未能启动安装程序。");
+        }
+
+        Shutdown();
+    }
+
+    private static string DescribeUpdateError(Exception exception) => exception switch
+    {
+        HttpRequestException { StatusCode: System.Net.HttpStatusCode.Forbidden } =>
+            "GitHub 暂时限制了请求，请稍后再试。",
+        HttpRequestException => "无法连接 GitHub，请检查网络后重试。",
+        UnauthorizedAccessException => "没有权限写入本地更新目录。",
+        _ => exception.Message,
+    };
+
     // ---------------- 渲染 ----------------
 
     private void Render(TransferSnapshot snapshot)
@@ -541,7 +679,10 @@ public partial class MainWindow : Window, IDisposable
         _disposed = true;
 
         _manager.Cancel();
+        _updateCts.Cancel();
         _tray.Dispose();
+        _updateService.Dispose();
+        _updateCts.Dispose();
 
         // TransferManager 的释放是同步完成的（只是取消 + 释放 CTS），
         // 所以这里同步等待不会阻塞界面线程。

@@ -29,6 +29,10 @@ clean_dir() {
 
 publish() {
   local project="$1" rid="$2" out="$3"
+  local version_args=()
+  if [[ -n "${NEXUSP2P_VERSION:-}" ]]; then
+    version_args+=("-p:Version=$NEXUSP2P_VERSION")
+  fi
   echo "==> 发布 $project ($rid)"
   dotnet publish "$root/src/$project" \
     -c Release \
@@ -38,6 +42,7 @@ publish() {
     -p:IncludeNativeLibrariesForSelfExtract=true \
     -p:EnableCompressionInSingleFile=true \
     -p:DebugType=none \
+    "${version_args[@]}" \
     -o "$out" \
     --nologo
 }
