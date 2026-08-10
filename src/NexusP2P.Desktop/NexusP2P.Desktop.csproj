@@ -19,7 +19,13 @@
     -->
     <AssemblyName>NexusP2P-Desktop</AssemblyName>
     <RootNamespace>NexusP2P.Desktop</RootNamespace>
-    <Version>1.0.0</Version>
+    <!--
+      本地构建的兜底版本号。打包时 packaging/package.sh 会用 NEXUSP2P_VERSION
+      通过 -p:Version 覆盖它 —— 发布产物的版本号来自 git 标签，不是这里。
+      但它决定了自动更新的比较基准（见 Updates/UpdateService.cs 的
+      CurrentVersion），所以保持与最新发布版本一致，别让它落后。
+    -->
+    <Version>1.0.1</Version>
 
     <!-- WPF 需要 -windows 目标框架；Directory.Build.props 里的 net9.0 在这里被覆盖 -->
     <TargetFramework>net9.0-windows</TargetFramework>

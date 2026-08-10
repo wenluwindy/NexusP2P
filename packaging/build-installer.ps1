@@ -12,10 +12,14 @@ if (-not (Test-Path -LiteralPath $source)) {
     throw "找不到 Windows 发布目录。请先运行 packaging/package.sh win。"
 }
 
+# Inno Setup 6.7 的安装器在没有管理员权限时默认装到用户目录，而不是
+# Program Files —— winget 安装就是这种情况。只找 Program Files 会在开发机上
+# 报「找不到 Inno Setup」，尽管它明明装好了。
 $compiler = @(
     (Get-Command 'ISCC.exe' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source),
     (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
-    (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe')
+    (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe'),
+    (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe')
 ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
 
 if (-not $compiler) {

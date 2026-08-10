@@ -32,7 +32,17 @@ AppMutex=Local\NexusP2P.Desktop.SingleInstance
 UninstallDisplayIcon={app}\NexusP2P-Desktop.exe
 
 [Languages]
-Name: "chinesesimp"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+;
+; 简体中文不在 Inno Setup 的安装包里 —— 它是官方站点上的「用户贡献翻译」，
+; 只存在于源码仓库的 Files/Languages/Unofficial/ 下，装完 Inno Setup 后
+; compiler:Languages\ 里**没有**这个文件。写成 compiler: 前缀会在编译时报
+;   Couldn't open include file "...\Languages\ChineseSimplified.isl"
+; 而这在开发机上可能碰巧不报（如果谁手动拷过一份），只在干净的 CI 上炸。
+;
+; 所以把它随仓库一起带上，并用相对路径引用：编译不依赖网络，也不依赖
+; 目标机器装的 Inno Setup 里恰好有什么。文件取自 jrsoftware/issrc 的
+; is-6_7_3 标签。
+Name: "chinesesimp"; MessagesFile: "{#SourcePath}\ChineseSimplified.isl"
 
 [Files]
 Source: "{#RepositoryRoot}\dist\nexusp2p-win-x64\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
