@@ -172,7 +172,10 @@ public static class SignalingEndpoints
         }
         catch (Exception ex) when (ex is WebSocketException or OperationCanceledException)
         {
-            logger.LogDebug("房间 {Code} 的 {Role} 连接断开：{Reason}", room.Code, role, ex.Message);
+            if (logger.IsEnabled(LogLevel.Debug))
+            {
+                logger.LogDebug("房间 {Code} 的 {Role} 连接断开：{Reason}", room.Code, role, ex.Message);
+            }
         }
         finally
         {

@@ -193,7 +193,7 @@ public sealed class RoomSweeper(RoomRegistry registry, ILogger<RoomSweeper> logg
             try
             {
                 var removed = registry.Sweep();
-                if (removed > 0)
+                if (removed > 0 && logger.IsEnabled(LogLevel.Debug))
                 {
                     logger.LogDebug("本轮回收了 {Count} 个过期房间。", removed);
                 }

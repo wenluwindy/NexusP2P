@@ -46,7 +46,10 @@ public static class WebUiEndpoints
         });
 
         MapIndexRoutes(app, files);
-        logger.LogInformation("网页界面已挂载，来自 {Root}。", root);
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation("网页界面已挂载，来自 {Root}。", root);
+        }
     }
 
     /// <summary>

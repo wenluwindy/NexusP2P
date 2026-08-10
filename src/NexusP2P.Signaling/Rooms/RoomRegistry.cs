@@ -76,7 +76,10 @@ public sealed class RoomRegistry(
 
             code = candidate;
             room = created;
-            logger.LogInformation("房间 {Code} 已建立。", candidate);
+            if (logger.IsEnabled(LogLevel.Information))
+            {
+                logger.LogInformation("房间 {Code} 已建立。", candidate);
+            }
             return true;
         }
 
@@ -96,24 +99,36 @@ public sealed class RoomRegistry(
         if (!_rooms.TryGetValue(code.Value, out var existing))
         {
             // 只写日志，不告诉客户端 —— 见 JoinOutcome 的说明
-            logger.LogDebug("入房失败：房间 {Code} 不存在。", code);
+            if (logger.IsEnabled(LogLevel.Debug))
+            {
+                logger.LogDebug("入房失败：房间 {Code} 不存在。", code);
+            }
             return JoinOutcome.Unavailable;
         }
 
         if (existing.IsExpired(timeProvider.GetUtcNow(), GracePeriod))
         {
-            logger.LogDebug("入房失败：房间 {Code} 的宽限期已过。", code);
+            if (logger.IsEnabled(LogLevel.Debug))
+            {
+                logger.LogDebug("入房失败：房间 {Code} 的宽限期已过。", code);
+            }
             return JoinOutcome.Unavailable;
         }
 
         if (!existing.TryOccupy(role, sink))
         {
-            logger.LogDebug("入房失败：房间 {Code} 的 {Role} 位子已被占。", code, role);
+            if (logger.IsEnabled(LogLevel.Debug))
+            {
+                logger.LogDebug("入房失败：房间 {Code} 的 {Role} 位子已被占。", code, role);
+            }
             return JoinOutcome.Unavailable;
         }
 
         room = existing;
-        logger.LogInformation("{Role} 已进入房间 {Code}。", role, code);
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation("{Role} 已进入房间 {Code}。", role, code);
+        }
         return JoinOutcome.Joined;
     }
 
@@ -126,8 +141,11 @@ public sealed class RoomRegistry(
 
         if (room.IsEmpty)
         {
-            logger.LogInformation(
-                "房间 {Code} 已空，进入 {Grace} 秒宽限期。", room.Code, Options.RoomGracePeriodSeconds);
+            if (logger.IsEnabled(LogLevel.Information))
+            {
+                logger.LogInformation(
+                    "房间 {Code} 已空，进入 {Grace} 秒宽限期。", room.Code, Options.RoomGracePeriodSeconds);
+            }
         }
     }
 
@@ -147,7 +165,10 @@ public sealed class RoomRegistry(
             if (_rooms.TryRemove(key, out _))
             {
                 removed++;
-                logger.LogInformation("房间 {Code} 宽限期已过，已回收。", room.Code);
+                if (logger.IsEnabled(LogLevel.Information))
+                {
+                    logger.LogInformation("房间 {Code} 宽限期已过，已回收。", room.Code);
+                }
             }
         }
 
