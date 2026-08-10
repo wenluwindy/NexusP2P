@@ -1,0 +1,91 @@
+页面已加载，等待传输完成…
+  浏览器侧：已接收 0MiB，速率 0MiB/s
+  浏览器侧：已接收 1MiB，速率 0.3MiB/s
+  浏览器侧：已接收 2MiB，速率 0.4MiB/s
+  浏览器侧：已接收 3MiB，速率 0.4MiB/s
+  浏览器侧：已接收 4MiB，速率 0.4MiB/s
+  浏览器侧：已接收 5MiB，速率 0.4MiB/s
+  浏览器侧：已接收 6MiB，速率 0.4MiB/s
+  浏览器侧：已接收 7MiB，速率 0.4MiB/s
+  浏览器侧：已接收 8MiB，速率 0.4MiB/s
+  浏览器侧：已接收 9MiB，速率 0.4MiB/s
+  浏览器侧：已接收 10MiB，速率 0.4MiB/s
+  浏览器侧：已接收 11MiB，速率 0.4MiB/s
+  浏览器侧：已接收 12MiB，速率 0.4MiB/s
+  浏览器侧：已接收 13MiB，速率 0.4MiB/s
+  浏览器侧：已接收 14MiB，速率 0.4MiB/s
+  浏览器侧：已接收 15MiB，速率 0.5MiB/s
+  浏览器侧：已接收 16MiB，速率 0.5MiB/s
+  浏览器侧：已接收 17MiB，速率 0.4MiB/s
+  浏览器侧：已接收 18MiB，速率 0.4MiB/s
+  浏览器侧：已接收 19MiB，速率 0.5MiB/s
+  浏览器侧：已接收 20MiB，速率 0.4MiB/s
+  浏览器侧：已接收 21MiB，速率 0.4MiB/s
+  浏览器侧：已接收 22MiB，速率 0.4MiB/s
+  浏览器侧：已接收 23MiB，速率 0.4MiB/s
+  浏览器侧：已接收 24MiB，速率 0.4MiB/s
+  浏览器侧：已接收 25MiB，速率 0.5MiB/s
+  浏览器侧：已接收 26MiB，速率 0.4MiB/s
+  浏览器侧：已接收 27MiB，速率 0.4MiB/s
+  浏览器侧：已接收 28MiB，速率 0.4MiB/s
+  浏览器侧：已接收 29MiB，速率 0.4MiB/s
+  浏览器侧：已接收 30MiB，速率 0.4MiB/s
+  浏览器侧：已接收 31MiB，速率 0.4MiB/s
+  浏览器侧：已接收 32MiB，速率 0.4MiB/s
+  浏览器侧：已接收 33MiB，速率 0.4MiB/s
+  浏览器侧：已接收 34MiB，速率 0.4MiB/s
+  浏览器侧：已接收 35MiB，速率 0.4MiB/s
+  浏览器侧：已接收 36MiB，速率 0.4MiB/s
+  浏览器侧：已接收 37MiB，速率 0.4MiB/s
+  浏览器侧：已接收 38MiB，速率 0.4MiB/s
+  浏览器侧：已接收 39MiB，速率 0.4MiB/s
+  浏览器侧：已接收 40MiB，速率 0.4MiB/s
+  浏览器侧：已接收 41MiB，速率 0.4MiB/s
+  浏览器侧：已接收 42MiB，速率 0.4MiB/s
+  浏览器侧：已接收 43MiB，速率 0.5MiB/s
+  浏览器侧：已接收 44MiB，速率 0.4MiB/s
+  浏览器侧：已接收 45MiB，速率 0.4MiB/s
+  浏览器侧：已接收 46MiB，速率 0.4MiB/s
+  浏览器侧：已接收 47MiB，速率 0.4MiB/s
+  浏览器侧：已接收 48MiB，速率 0.4MiB/s
+  浏览器侧：已接收 49MiB，速率 0.4MiB/s
+  浏览器侧：已接收 50MiB，速率 0.4MiB/s
+  浏览器侧：已接收 51MiB，速率 0.4MiB/s
+  浏览器侧：已接收 52MiB，速率 0.4MiB/s
+  浏览器侧：已接收 53MiB，速率 0.4MiB/s
+  浏览器侧：已接收 54MiB，速率 0.4MiB/s
+  浏览器侧：已接收 55MiB，速率 0.4MiB/s
+  浏览器侧：已接收 56MiB，速率 0.5MiB/s
+  浏览器侧：已接收 57MiB，速率 0.4MiB/s
+  浏览器侧：已接收 58MiB，速率 0.4MiB/s
+  浏览器侧：已接收 59MiB，速率 0.4MiB/s
+  浏览器侧：已接收 60MiB，速率 0.4MiB/s
+  浏览器侧：已接收 61MiB，速率 0.4MiB/s
+  浏览器侧：已接收 62MiB，速率 0.4MiB/s
+  浏览器侧：已接收 63MiB，速率 0.4MiB/s
+  浏览器侧：已接收 64MiB，速率 0.5MiB/s
+
+--- 浏览器端日志 ---
+正在连接信令…
+信令已连接，等待 offer…
+添加候选失败（通常无害）：Failed to execute 'addIceCandidate' on 'RTCPeerConnection': The remote description was null
+添加候选失败（通常无害）：Failed to execute 'addIceCandidate' on 'RTCPeerConnection': The remote description was null
+添加候选失败（通常无害）：Failed to execute 'addIceCandidate' on 'RTCPeerConnection': The remote description was null
+添加候选失败（通常无害）：Failed to execute 'addIceCandidate' on 'RTCPeerConnection': The remote description was null
+收到 offer，本次将传输 64 MiB，分片 64 KiB
+已发送 answer
+ICE 状态 -> checking
+连接状态 -> connecting
+ICE 状态 -> connected
+连接状态 -> connected
+收到 DataChannel "bulk"
+通道已打开，开始接收
+✓ 接收完成：67,108,864 字节，耗时 149.45s，峰值 0.5 MiB/s
+通道已关闭
+
+--- 浏览器端指标 ---
+  已接收: 64MiB
+  速率: 0.4MiB/s
+  耗时: 149.4s
+  校验: 连续
+  瓶颈: 传输完成 — 平均 0.4 MiB/s，峰值 0.5 MiB/s

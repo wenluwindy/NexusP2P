@@ -1,0 +1,118 @@
+=== SIPSorcery DataChannel 吞吐 spike ===
+  总量      : 128 MiB
+  分片      : 64 KiB
+  背压水位  : 8 MiB
+  分片总数  : 2,048
+  SCTP 节拍 : 1 ms（反射改写）
+
+请用 Chrome 或 Edge 打开  http://localhost:5093
+（localhost 属于 secure context，所以 http 下 WebRTC 也可用）
+
+info: Microsoft.Hosting.Lifetime[14] Now listening on: http://localhost:5093
+info: Microsoft.Hosting.Lifetime[0] Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0] Hosting environment: Production
+info: Microsoft.Hosting.Lifetime[0] Content root path: D:\VSProjects\P2P High-Speed File Transfer Platform\spike\SipSorceryThroughput
+浏览器已连接，开始协商…
+  ICE 状态 -> checking
+  已应用 answer：OK
+  ICE 状态 -> connected
+  连接状态 -> connecting
+  连接状态 -> connected
+  DataChannel 已打开
+  SCTP 初始状态: cwnd    4.3 KiB | ssthresh     256 KiB | rwnd  4,608 KiB | 在途    0.0 KiB | 节拍  50 ms | 理论上限   0.08 MiB/s
+  已把发送节拍从 50 ms 改写为 1 ms（反射，仅诊断用）
+
+开始传输：
+  [00:14] 已发        8 MiB |     0.6 MiB/s | 缓冲    4.1 MiB | 托管堆    7.6 MiB | 工作集  115.5 MiB
+            SCTP: cwnd    7.8 KiB | ssthresh     256 KiB | rwnd  4,547 KiB | 在途    8.9 KiB | 节拍   1 ms | 理论上限   7.61 MiB/s
+  [00:25] 已发       12 MiB |     0.4 MiB/s | 缓冲    4.0 MiB | 托管堆   38.7 MiB | 工作集  114.7 MiB
+            SCTP: cwnd   16.7 KiB | ssthresh     256 KiB | rwnd  4,540 KiB | 在途   18.3 KiB | 节拍   1 ms | 理论上限  16.32 MiB/s
+  [00:33] 已发       16 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆   42.1 MiB | 工作集  123.0 MiB
+            SCTP: cwnd   21.4 KiB | ssthresh     256 KiB | rwnd  4,548 KiB | 在途   18.3 KiB | 节拍   1 ms | 理论上限  20.90 MiB/s
+  [00:42] 已发       20 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆   46.2 MiB | 工作集  123.5 MiB
+            SCTP: cwnd   22.6 KiB | ssthresh     256 KiB | rwnd  4,546 KiB | 在途   18.3 KiB | 节拍   1 ms | 理论上限  22.05 MiB/s
+  [00:51] 已发       24 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆   35.3 MiB | 工作集  125.3 MiB
+            SCTP: cwnd   22.6 KiB | ssthresh     256 KiB | rwnd  4,551 KiB | 在途   18.3 KiB | 节拍   1 ms | 理论上限  22.05 MiB/s
+  [01:00] 已发       28 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆   39.8 MiB | 工作集  127.9 MiB
+            SCTP: cwnd   22.6 KiB | ssthresh     256 KiB | rwnd  4,549 KiB | 在途   18.3 KiB | 节拍   1 ms | 理论上限  22.05 MiB/s
+  [01:08] 已发       32 MiB |     0.5 MiB/s | 缓冲    4.0 MiB | 托管堆   45.8 MiB | 工作集  130.7 MiB
+            SCTP: cwnd   22.6 KiB | ssthresh     256 KiB | rwnd  4,539 KiB | 在途   23.0 KiB | 节拍   1 ms | 理论上限  22.05 MiB/s
+  [01:17] 已发       37 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆   27.1 MiB | 工作集  135.2 MiB
+            SCTP: cwnd   22.6 KiB | ssthresh     256 KiB | rwnd  4,549 KiB | 在途   18.3 KiB | 节拍   1 ms | 理论上限  22.05 MiB/s
+  [01:26] 已发       41 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆   34.3 MiB | 工作集  139.3 MiB
+            SCTP: cwnd   22.6 KiB | ssthresh     256 KiB | rwnd  4,604 KiB | 在途    9.4 KiB | 节拍   1 ms | 理论上限  22.05 MiB/s
+  [01:35] 已发       45 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆   41.4 MiB | 工作集  143.5 MiB
+            SCTP: cwnd   26.1 KiB | ssthresh     256 KiB | rwnd  4,544 KiB | 在途   20.6 KiB | 节拍   1 ms | 理论上限  25.48 MiB/s
+  [01:43] 已发       49 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆   48.4 MiB | 工作集  147.2 MiB
+            SCTP: cwnd   27.3 KiB | ssthresh     256 KiB | rwnd  4,548 KiB | 在途   18.3 KiB | 节拍   1 ms | 理论上限  26.62 MiB/s
+  [01:52] 已发       53 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆   55.5 MiB | 工作集  154.8 MiB
+            SCTP: cwnd   27.3 KiB | ssthresh     256 KiB | rwnd  4,606 KiB | 在途   14.1 KiB | 节拍   1 ms | 理论上限  26.62 MiB/s
+  [02:01] 已发       57 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆   62.4 MiB | 工作集  158.9 MiB
+            SCTP: cwnd   27.3 KiB | ssthresh     256 KiB | rwnd  4,549 KiB | 在途   18.3 KiB | 节拍   1 ms | 理论上限  26.62 MiB/s
+  [02:10] 已发       61 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆   69.6 MiB | 工作集  162.8 MiB
+            SCTP: cwnd   27.3 KiB | ssthresh     256 KiB | rwnd  4,544 KiB | 在途   18.3 KiB | 节拍   1 ms | 理论上限  26.62 MiB/s
+  [02:18] 已发       65 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆   76.5 MiB | 工作集  167.1 MiB
+            SCTP: cwnd   27.3 KiB | ssthresh     256 KiB | rwnd  4,602 KiB | 在途    9.4 KiB | 节拍   1 ms | 理论上限  26.62 MiB/s
+  [02:27] 已发       69 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆   83.7 MiB | 工作集  171.2 MiB
+            SCTP: cwnd   27.3 KiB | ssthresh     256 KiB | rwnd  4,552 KiB | 在途   18.3 KiB | 节拍   1 ms | 理论上限  26.62 MiB/s
+  [02:36] 已发       73 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆   90.3 MiB | 工作集  175.0 MiB
+            SCTP: cwnd   27.3 KiB | ssthresh     256 KiB | rwnd  4,546 KiB | 在途   18.3 KiB | 节拍   1 ms | 理论上限  26.62 MiB/s
+  [02:45] 已发       77 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆   96.1 MiB | 工作集  180.5 MiB
+            SCTP: cwnd   27.3 KiB | ssthresh     256 KiB | rwnd  4,545 KiB | 在途   18.3 KiB | 节拍   1 ms | 理论上限  26.62 MiB/s
+  [02:54] 已发       81 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆  102.0 MiB | 工作集  186.8 MiB
+            SCTP: cwnd   27.3 KiB | ssthresh     256 KiB | rwnd  4,542 KiB | 在途   13.6 KiB | 节拍   1 ms | 理论上限  26.62 MiB/s
+  [03:02] 已发       85 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆   83.8 MiB | 工作集  192.3 MiB
+            SCTP: cwnd   27.3 KiB | ssthresh     256 KiB | rwnd  4,547 KiB | 在途   18.3 KiB | 节拍   1 ms | 理论上限  26.62 MiB/s
+  [03:11] 已发       89 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆   91.1 MiB | 工作集  195.5 MiB
+            SCTP: cwnd   27.3 KiB | ssthresh     256 KiB | rwnd  4,604 KiB | 在途    9.4 KiB | 节拍   1 ms | 理论上限  26.62 MiB/s
+  [03:20] 已发       93 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆   98.2 MiB | 工作集  199.5 MiB
+            SCTP: cwnd   27.3 KiB | ssthresh     256 KiB | rwnd  4,548 KiB | 在途   18.3 KiB | 节拍   1 ms | 理论上限  26.62 MiB/s
+  [03:29] 已发       98 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆  105.2 MiB | 工作集  203.0 MiB
+            SCTP: cwnd   27.3 KiB | ssthresh     256 KiB | rwnd  4,543 KiB | 在途    8.9 KiB | 节拍   1 ms | 理论上限  26.62 MiB/s
+  [03:37] 已发      102 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆  112.4 MiB | 工作集  209.9 MiB
+            SCTP: cwnd   27.3 KiB | ssthresh     256 KiB | rwnd  4,547 KiB | 在途   23.0 KiB | 节拍   1 ms | 理论上限  26.62 MiB/s
+  [03:46] 已发      106 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆  119.4 MiB | 工作集  214.1 MiB
+            SCTP: cwnd   27.3 KiB | ssthresh     256 KiB | rwnd  4,549 KiB | 在途   23.0 KiB | 节拍   1 ms | 理论上限  26.62 MiB/s
+  [03:55] 已发      110 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆  125.7 MiB | 工作集  235.3 MiB
+            SCTP: cwnd   27.3 KiB | ssthresh     256 KiB | rwnd  4,542 KiB | 在途   18.3 KiB | 节拍   1 ms | 理论上限  26.62 MiB/s
+  [04:04] 已发      114 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆  132.8 MiB | 工作集  246.8 MiB
+            SCTP: cwnd   28.0 KiB | ssthresh     256 KiB | rwnd  4,601 KiB | 在途    9.4 KiB | 节拍   1 ms | 理论上限  27.32 MiB/s
+  [04:13] 已发      118 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆  139.9 MiB | 工作集  246.8 MiB
+            SCTP: cwnd   28.0 KiB | ssthresh     256 KiB | rwnd  4,606 KiB | 在途   14.1 KiB | 节拍   1 ms | 理论上限  27.32 MiB/s
+  [04:22] 已发      122 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆  145.9 MiB | 工作集  247.1 MiB
+            SCTP: cwnd   28.0 KiB | ssthresh     256 KiB | rwnd  4,545 KiB | 在途   18.3 KiB | 节拍   1 ms | 理论上限  27.32 MiB/s
+  [04:30] 已发      126 MiB |     0.5 MiB/s | 缓冲    4.1 MiB | 托管堆  151.7 MiB | 工作集  247.5 MiB
+            SCTP: cwnd   29.2 KiB | ssthresh     256 KiB | rwnd  4,549 KiB | 在途   18.3 KiB | 节拍   1 ms | 理论上限  28.47 MiB/s
+  发送循环结束，等待缓冲排空…
+
+  SCTP 终态: cwnd   32.7 KiB | ssthresh     256 KiB | rwnd  4,608 KiB | 在途    0.0 KiB | 节拍   1 ms | 理论上限  31.90 MiB/s
+
+================ 结果 ================
+  分片大小        : 64 KiB
+  背压水位        : 8 MiB
+
+  发送字节        : 134,217,728
+  接收字节        : 134,217,728  ✓ 一致
+  序号连续性      : ✓ 全部连续，无丢失无错序
+
+  .NET 侧耗时     : 284.01 s
+  .NET 侧吞吐     : 0.5 MiB/s  (0.00 Gbit/s)
+  浏览器侧耗时    : 283.62 s
+  浏览器侧吞吐    : 0.5 MiB/s
+
+  托管堆峰值      : 151.7 MiB
+  工作集峰值      : 247.5 MiB
+  bufferedAmount 峰值 : 8.1 MiB
+
+  背压触发次数    : 30
+  背压等待总时长  : 270.48 s（占 95.2%）
+
+  判定：
+    数据完整      : 通过
+    背压有效      : 通过
+    内存可控      : 通过
+
+  => 假设成立。按此吞吐，20 GiB 在本机回环需 12.62 小时；
+     真实场景瓶颈是家庭上行带宽，不是这一层。
+======================================
+  连接状态 -> closed

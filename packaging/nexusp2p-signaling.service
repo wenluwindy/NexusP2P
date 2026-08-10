@@ -1,0 +1,41 @@
+[Unit]
+Description=NexusP2P 信令服务器
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# 自包含单文件，不依赖系统装的 .NET
+WorkingDirectory=/opt/nexusp2p-signaling
+ExecStart=/opt/nexusp2p-signaling/nexusp2p-signaling --urls http://127.0.0.1:5000
+Environment=ASPNETCORE_ENVIRONMENT=Production
+
+# 单文件包每次启动要把内容解到临时目录，指定一个稳定位置，
+# 免得跟着 /tmp 的清理策略走（清掉正在用的解包目录会让进程崩）
+Environment=DOTNET_BUNDLE_EXTRACT_BASE_DIR=/var/lib/nexusp2p-signaling/bundle
+
+Restart=always
+RestartSec=5
+
+User=nexusp2p
+Group=nexusp2p
+
+# ── 收紧权限 ──────────────────────────────────────────
+# 服务只做两件事：收发 WebSocket、转发字符串。不碰文件、不需要提权。
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/nexusp2p-signaling
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+
+# 直接绑 443 时才需要这一条（走 nginx 反代就不需要，注释掉更安全）
+# AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

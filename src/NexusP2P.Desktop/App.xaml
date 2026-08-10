@@ -1,0 +1,18 @@
+<Application x:Class="NexusP2P.Desktop.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ShutdownMode="OnExplicitShutdown"
+             Startup="OnStartup">
+    <!--
+        ShutdownMode=OnExplicitShutdown：关掉窗口不等于退出程序。
+        「关窗后传输继续」是明确要求的行为，默认的 OnLastWindowClose
+        会在关窗那一刻把整个进程连带传输一起杀掉。
+    -->
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Styles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

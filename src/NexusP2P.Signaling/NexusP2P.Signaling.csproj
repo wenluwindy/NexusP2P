@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\NexusP2P.Core\NexusP2P.Core.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <AssemblyName>nexusp2p-signaling</AssemblyName>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!--
+      关掉 SDK 的静态 Web 资产管线。前端由 WebUiEndpoints 用
+      PhysicalFileProvider 直接托管（因为要做 /r/{code} 回退与自定义缓存头），
+      两套机制并存只会互相打架 —— 具体表现是 SDK 生成的资产清单要求
+      项目根下真的有一个 wwwroot 目录，而我们的前端在隔壁项目里。
+    -->
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
+  </PropertyGroup>
+
+  <!--
+    把前端复制进输出目录。
+    前端是无构建步骤的原生 ES 模块，所以「产物」就是源文件本身 ——
+    不需要 npm、不需要打包器，改一行刷新页面就生效。
+    用 None 而不是 Content：Content 会被当成静态 Web 资产。
+  -->
+  <ItemGroup>
+    <None Include="..\NexusP2P.Web\wwwroot\**\*">
+      <Link>wwwroot\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

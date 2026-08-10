@@ -1,0 +1,58 @@
+# 1Panel「容器 → 编排」可以直接粘贴这份内容。
+#
+# 前提：已经按部署文档第一节把包解到宿主机 /opt/nexusp2p-signaling，
+# 并且 appsettings.json 已经改好。
+#
+# 二进制与配置都是挂载进来的，所以：
+#   改配置 → docker compose restart  即可，不用重建镜像
+#   换版本 → 覆盖宿主机上的二进制再 restart
+
+services:
+  nexusp2p-signaling:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nexusp2p-signaling:local
+    container_name: nexusp2p-signaling
+    restart: unless-stopped
+
+    volumes:
+      # 只读挂载：容器不需要改动这两个文件
+      - /opt/nexusp2p-signaling/nexusp2p-signaling:/app/nexusp2p-signaling:ro
+      - /opt/nexusp2p-signaling/appsettings.json:/app/appsettings.json:ro
+      # 单文件包的解包目录。做成卷，免得每次重启都重新解一遍
+      - nexusp2p-bundle:/var/lib/nexusp2p/bundle
+
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+
+    # 刻意**不做**端口映射。
+    #
+    # 反向代理与本服务在同一个 Docker 网络里，用容器名就能访问 ——
+    # 映射到宿主机端口只会让别人可以绕过 HTTPS 直连信令服务器，
+    # 那样限速和 TLS 都白配了。
+    #
+    # 需要在宿主机上调试时临时打开：
+    # ports:
+    #   - "127.0.0.1:5000:5000"
+
+    networks:
+      - 1panel-network
+
+    healthcheck:
+      # 真的打一次 /health。**不要写成永远成功的形式** ——
+      # 面板上显示「健康」而服务其实起不来，比没有健康检查更误导人。
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  # 用 1Panel 已有的网络，这样 OpenResty 能用容器名直接访问。
+  # 名字对不上就先 `docker network ls` 看一眼实际叫什么。
+  1panel-network:
+    external: true
+
+volumes:
+  nexusp2p-bundle:

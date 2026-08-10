@@ -1,0 +1,70 @@
+=== SIPSorcery DataChannel 吞吐 spike ===
+  总量      : 256 MiB
+  分片      : 64 KiB
+  背压水位  : 8 MiB
+  分片总数  : 4,096
+  SCTP 节拍 : 50 ms（库默认）
+  方向      : 浏览器 -> .NET（反向）
+
+请用 Chrome 或 Edge 打开  http://localhost:5096
+（localhost 属于 secure context，所以 http 下 WebRTC 也可用）
+
+info: Microsoft.Hosting.Lifetime[14] Now listening on: http://localhost:5096
+info: Microsoft.Hosting.Lifetime[0] Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0] Hosting environment: Production
+info: Microsoft.Hosting.Lifetime[0] Content root path: D:\VSProjects\P2P High-Speed File Transfer Platform\spike\SipSorceryThroughput
+浏览器已连接，开始协商…
+  ICE 状态 -> checking
+  已应用 answer：OK
+  ICE 状态 -> connected
+  连接状态 -> connecting
+  连接状态 -> connected
+  DataChannel 已打开
+  SCTP 初始状态: cwnd    4.3 KiB | ssthresh     256 KiB | rwnd  4,608 KiB | 在途    0.0 KiB | 节拍  50 ms | 理论上限   0.08 MiB/s
+
+开始传输：
+  [00:02] 已收        5 MiB |     2.6 MiB/s
+  [00:04] 已收        6 MiB |     0.2 MiB/s
+  [00:06] 已收        6 MiB |     0.2 MiB/s
+  [00:08] 已收        6 MiB |     0.2 MiB/s
+  [00:10] 已收        7 MiB |     0.2 MiB/s
+  [00:13] 已收        7 MiB |     0.2 MiB/s
+  [00:15] 已收        8 MiB |     0.2 MiB/s
+  [00:17] 已收        8 MiB |     0.2 MiB/s
+  [00:19] 已收        8 MiB |     0.2 MiB/s
+  [00:21] 已收        9 MiB |     0.2 MiB/s
+  [00:24] 已收        9 MiB |     0.2 MiB/s
+  [00:26] 已收       10 MiB |     0.2 MiB/s
+  [00:28] 已收       10 MiB |     0.2 MiB/s
+  [00:30] 已收       10 MiB |     0.2 MiB/s
+  [00:32] 已收       11 MiB |     0.2 MiB/s
+  [00:34] 已收       11 MiB |     0.2 MiB/s
+  [00:36] 已收       12 MiB |     0.2 MiB/s
+  [00:39] 已收       12 MiB |     0.2 MiB/s
+  [00:41] 已收       12 MiB |     0.2 MiB/s
+  [00:43] 已收       13 MiB |     0.2 MiB/s
+  [00:45] 已收       13 MiB |     0.2 MiB/s
+  [00:47] 已收       16 MiB |     1.4 MiB/s
+  [00:49] 已收       28 MiB |     6.0 MiB/s
+  [00:51] 已收       45 MiB |     8.6 MiB/s
+  [00:53] 已收       64 MiB |     9.5 MiB/s
+  [00:55] 已收       83 MiB |     9.4 MiB/s
+  [00:57] 已收      103 MiB |     9.6 MiB/s
+  [00:59] 已收      122 MiB |     9.7 MiB/s
+  [01:01] 已收      142 MiB |     9.7 MiB/s
+  [01:03] 已收      161 MiB |     9.5 MiB/s
+  [01:05] 已收      180 MiB |     9.2 MiB/s
+  [01:07] 已收      199 MiB |     9.5 MiB/s
+  [01:09] 已收      218 MiB |     9.8 MiB/s
+  [01:11] 已收      238 MiB |     9.7 MiB/s
+
+========== 反向结果（浏览器发 -> .NET 收） ==========
+  接收字节        : 268,435,456  ✓ 与预期一致
+  序号连续性      : ✓ 全部连续
+  耗时            : 73.64 s
+  吞吐            : 3.5 MiB/s  (0.03 Gbit/s)
+  SCTP 终态       : cwnd    4.3 KiB | ssthresh     256 KiB | rwnd  4,608 KiB | 在途    0.0 KiB | 节拍  50 ms | 理论上限   0.08 MiB/s
+
+  按此吞吐，20 GiB 需 1.64 小时。
+====================================================
+  连接状态 -> closed

@@ -1,0 +1,22 @@
+{
+  "name": "nexusp2p-web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "NexusP2P 网页端。原生 ES 模块，无构建步骤 —— 改一行刷新页面就生效。",
+  "scripts": {
+    "test": "node tests/loopback.mjs && node tests/cancel.mjs && node tests/interop.mjs && node tests/browser.mjs && node tests/e2e.mjs",
+    "test:loopback": "node tests/loopback.mjs",
+    "test:cancel": "node tests/cancel.mjs",
+    "test:interop": "node tests/interop.mjs",
+    "test:browser": "node tests/browser.mjs",
+    "test:e2e": "node tests/e2e.mjs",
+
+    "//test:released": "对 dist/ 里的发布产物跑全链路。要先跑 packaging/package.sh。",
+    "test:released": "node tests/released.mjs",
+    "vectors": "node tests/vectors.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,70 @@
+=== libdatachannel DataChannel 吞吐 spike ===
+  总量        : 1,024 MiB
+  分片        : 64 KiB
+  背压水位    : 8 MiB
+  单条上限    : 256 KiB
+  SCTP 发送缓冲: 库默认
+  SCTP 队列上限: 库默认
+
+请用 Chrome 或 Edge 打开  http://localhost:5190
+
+浏览器已连接，开始协商…
+  ICE 状态 -> RTC_ICE_CHECKING
+  连接状态 -> RTC_CONNECTING
+  已应用 answer
+  ICE 状态 -> RTC_ICE_CONNECTED
+  ICE 状态 -> RTC_ICE_COMPLETED
+  连接状态 -> RTC_CONNECTED
+  DataChannel 已打开
+  原生通道 id = 2，初始缓冲 = 0 字节
+
+开始传输：
+  [00:01] 已发       80 MiB |     76.5 MiB/s | 缓冲    3.1 MiB | 托管堆    3.0 MiB | 工作集    71.0 MiB
+  [00:02] 已发      158 MiB |     75.2 MiB/s | 缓冲    3.2 MiB | 托管堆    3.3 MiB | 工作集    71.1 MiB
+  [00:03] 已发      238 MiB |     76.4 MiB/s | 缓冲    3.2 MiB | 托管堆    2.9 MiB | 工作集    72.2 MiB
+  [00:04] 已发      316 MiB |     75.5 MiB/s | 缓冲    2.9 MiB | 托管堆    3.1 MiB | 工作集    71.1 MiB
+  [00:05] 已发      400 MiB |     80.1 MiB/s | 缓冲    3.4 MiB | 托管堆    2.7 MiB | 工作集    72.5 MiB
+  [00:06] 已发      482 MiB |     77.0 MiB/s | 缓冲    3.0 MiB | 托管堆    1.8 MiB | 工作集    71.3 MiB
+  [00:07] 已发      557 MiB |     70.6 MiB/s | 缓冲    3.2 MiB | 托管堆    1.6 MiB | 工作集    72.2 MiB
+  [00:08] 已发      633 MiB |     74.8 MiB/s | 缓冲    3.1 MiB | 托管堆    3.4 MiB | 工作集    69.9 MiB
+  [00:09] 已发      716 MiB |     81.4 MiB/s | 缓冲    7.6 MiB | 托管堆    3.1 MiB | 工作集    74.5 MiB
+  [00:10] 已发      789 MiB |     72.5 MiB/s | 缓冲    4.1 MiB | 托管堆    1.4 MiB | 工作集    71.0 MiB
+  [00:11] 已发      866 MiB |     76.0 MiB/s | 缓冲    3.8 MiB | 托管堆    3.3 MiB | 工作集    70.2 MiB
+  [00:12] 已发      946 MiB |     78.5 MiB/s | 缓冲    3.5 MiB | 托管堆    1.3 MiB | 工作集    69.3 MiB
+  [00:13] 已发    1,022 MiB |     74.3 MiB/s | 缓冲    3.2 MiB | 托管堆    1.6 MiB | 工作集    69.6 MiB
+  发送循环结束，等待缓冲排空…
+
+================ 结果 ================
+  库              : libdatachannel (DataChannelDotnet 1.3.1)
+  分片大小        : 64 KiB
+  背压水位        : 8 MiB
+
+  发送字节        : 1,073,741,824
+  接收字节        : 1,073,741,824  ✓ 一致
+  序号连续性      : ✓ 全部连续，无丢失无错序
+
+  .NET 侧耗时     : 13.52 s
+  .NET 侧吞吐     : 75.8 MiB/s  (0.59 Gbit/s)
+  浏览器侧耗时    : 13.53 s
+  浏览器侧吞吐    : 75.7 MiB/s
+
+  托管堆峰值      : 3.4 MiB
+  工作集峰值      : 74.5 MiB
+  bufferedAmount 峰值 : 8.1 MiB
+
+  背压触发次数    : 172
+  背压等待总时长  : 10.65 s（占 78.8%）
+
+  判定：
+    数据完整      : 通过
+    背压有效      : 通过
+    内存可控      : 通过
+    吞吐达标      : 通过
+
+  按此吞吐，20 GiB 需 0.08 小时（本机回环）。
+
+  => 假设成立：libdatachannel 可以承担主传输通道。
+======================================
+  连接状态 -> RTC_DISCONNECTED
+  ICE 状态 -> RTC_ICE_CLOSED
+  连接状态 -> RTC_CLOSED

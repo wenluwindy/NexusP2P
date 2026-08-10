@@ -1,0 +1,28 @@
+=== libdatachannel DataChannel 吞吐 spike ===
+  总量        : 512 MiB
+  分片        : 256 KiB
+  背压水位    : 32 MiB
+  单条上限    : 256 KiB
+  SCTP 发送缓冲: 4096 KiB
+  SCTP 队列上限: 库默认
+
+已应用自定义 SCTP 设置。
+请用 Chrome 或 Edge 打开  http://localhost:5204
+
+浏览器已连接，开始协商…
+  ICE 状态 -> RTC_ICE_CHECKING
+  连接状态 -> RTC_CONNECTING
+  已应用 answer
+  ICE 状态 -> RTC_ICE_CONNECTED
+  ICE 状态 -> RTC_ICE_COMPLETED
+  连接状态 -> RTC_CONNECTED
+  DataChannel 已打开
+  原生通道 id = 2，初始缓冲 = 0 字节
+
+开始传输：
+  ICE 状态 -> RTC_ICE_FAILED
+  连接状态 -> RTC_FAILED
+  ICE 状态 -> RTC_ICE_CLOSED
+  连接状态 -> RTC_CLOSED
+
+!! 会话异常：IOException: 传输中途通道关闭。

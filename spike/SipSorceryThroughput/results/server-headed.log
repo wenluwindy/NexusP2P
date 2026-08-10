@@ -1,0 +1,69 @@
+=== SIPSorcery DataChannel 吞吐 spike ===
+  总量      : 24 MiB
+  分片      : 64 KiB
+  背压水位  : 8 MiB
+  分片总数  : 384
+  SCTP 节拍 : 50 ms（库默认）
+
+请用 Chrome 或 Edge 打开  http://localhost:5094
+（localhost 属于 secure context，所以 http 下 WebRTC 也可用）
+
+info: Microsoft.Hosting.Lifetime[14] Now listening on: http://localhost:5094
+info: Microsoft.Hosting.Lifetime[0] Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0] Hosting environment: Production
+info: Microsoft.Hosting.Lifetime[0] Content root path: D:\VSProjects\P2P High-Speed File Transfer Platform\spike\SipSorceryThroughput
+浏览器已连接，开始协商…
+  ICE 状态 -> checking
+  已应用 answer：OK
+  ICE 状态 -> connected
+  连接状态 -> connecting
+  连接状态 -> connected
+  DataChannel 已打开
+  SCTP 初始状态: cwnd    4.3 KiB | ssthresh     256 KiB | rwnd  4,608 KiB | 在途    0.0 KiB | 节拍  50 ms | 理论上限   0.08 MiB/s
+
+开始传输：
+  [00:14] 已发        8 MiB |     0.6 MiB/s | 缓冲    4.1 MiB | 托管堆    7.2 MiB | 工作集  114.8 MiB
+            SCTP: cwnd    7.8 KiB | ssthresh     256 KiB | rwnd  4,546 KiB | 在途    8.9 KiB | 节拍  50 ms | 理论上限   0.15 MiB/s
+  [00:28] 已发       12 MiB |     0.3 MiB/s | 缓冲    4.1 MiB | 托管堆   38.3 MiB | 工作集  116.2 MiB
+            SCTP: cwnd    7.8 KiB | ssthresh     256 KiB | rwnd  4,549 KiB | 在途    8.9 KiB | 节拍  50 ms | 理论上限   0.15 MiB/s
+  [00:42] 已发       16 MiB |     0.3 MiB/s | 缓冲    4.1 MiB | 托管堆   42.1 MiB | 工作集  121.8 MiB
+            SCTP: cwnd   12.5 KiB | ssthresh     256 KiB | rwnd  4,545 KiB | 在途   13.6 KiB | 节拍  50 ms | 理论上限   0.24 MiB/s
+  [00:56] 已发       20 MiB |     0.3 MiB/s | 缓冲    4.1 MiB | 托管堆   46.2 MiB | 工作集  124.0 MiB
+            SCTP: cwnd   12.5 KiB | ssthresh     256 KiB | rwnd  4,547 KiB | 在途   13.6 KiB | 节拍  50 ms | 理论上限   0.24 MiB/s
+  发送循环结束，等待缓冲排空…
+
+  SCTP 终态: cwnd   12.5 KiB | ssthresh     256 KiB | rwnd  4,608 KiB | 在途    0.0 KiB | 节拍  50 ms | 理论上限   0.24 MiB/s
+
+================ 结果 ================
+  分片大小        : 64 KiB
+  背压水位        : 8 MiB
+
+  发送字节        : 25,165,824
+  接收字节        : 25,165,824  ✓ 一致
+  序号连续性      : ✓ 全部连续，无丢失无错序
+
+  .NET 侧耗时     : 83.59 s
+  .NET 侧吞吐     : 0.3 MiB/s  (0.00 Gbit/s)
+  浏览器侧耗时    : 83.23 s
+  浏览器侧吞吐    : 0.3 MiB/s
+
+  托管堆峰值      : 46.2 MiB
+  工作集峰值      : 128.8 MiB
+  bufferedAmount 峰值 : 8.1 MiB
+
+  背压触发次数    : 4
+  背压等待总时长  : 56.76 s（占 67.9%）
+
+  判定：
+    数据完整      : 通过
+    背压有效      : 通过
+    内存可控      : 通过
+    吞吐达标      : 失败 —— 0.3 MiB/s，低于门槛 12 MiB/s
+
+  按此吞吐，20 GiB 需 19.81 小时（本机回环，无任何网络开销）。
+
+  => 假设不成立。互通性和稳定性没问题，但吞吐远不够：
+     回环上都跑不到家庭上行带宽，说明瓶颈在库内部而非网络。
+     需要走备胎方案（网页只走中继，P2P 仅在 exe 之间用 QUIC）。
+======================================
+  连接状态 -> closed

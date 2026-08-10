@@ -1,0 +1,89 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      WinExe 而不是 Exe：**这一行就是「运行时不出现命令行窗口」的全部依据。**
+      Exe 会被标记成控制台子系统，Windows 启动时必然分配一个控制台窗口；
+      WinExe 标记成 Windows 子系统，不分配。
+
+      命令行版是隔壁独立的 NexusP2P.Cli（产物 nexusp2p.exe），
+      两者共用同一套 Agent/Transfer 逻辑，互不影响。
+    -->
+    <OutputType>WinExe</OutputType>
+
+    <!--
+      **不能叫 NexusP2P**：CLI 的产物是 nexusp2p.exe，而 Windows 的文件名
+      大小写不敏感 —— 两者是同一个文件名。打包时两个 publish 输出到同一个
+      目录，后发布的那个会静默覆盖前一个，包里最终只剩一个程序。
+      （这个坑真的踩到了：第一次打包出来的包里根本没有图形界面。）
+    -->
+    <AssemblyName>NexusP2P-Desktop</AssemblyName>
+    <RootNamespace>NexusP2P.Desktop</RootNamespace>
+
+    <!-- WPF 需要 -windows 目标框架；Directory.Build.props 里的 net9.0 在这里被覆盖 -->
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+
+    <!--
+      **必须关掉 Directory.Build.props 里继承来的 InvariantGlobalization。**
+
+      WPF 与 WinForms 会按操作系统的界面语言去构造 CultureInfo。
+      在 invariant 模式下这会直接抛：
+        "Only the invariant culture is supported in globalization-invariant mode.
+         2052 (0x0804) is an invalid culture identifier."
+      2052 就是 zh-CN —— 也就是说**在中文 Windows 上界面根本打不开**，
+      而在英文 Windows 上（LCID 1033 走 invariant 路径）却看不出问题。
+
+      服务端与命令行留着 invariant 是对的（少一个 ICU 依赖）；
+      图形界面不行，它必须有真实的区域数据来排版文字和格式化数字。
+    -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+
+    <!--
+      WinForms 只为托盘图标而启用：WPF 至今没有托盘 API，而 NotifyIcon
+      就是对 Shell_NotifyIcon 的一层薄封装。用它换掉一个第三方 NuGet 依赖。
+      界面本身全是 WPF，没有混用两套控件。
+    -->
+    <UseWindowsForms>true</UseWindowsForms>
+
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <ApplicationIcon>app.ico</ApplicationIcon>
+
+    <!-- P/Invoke 用源生成的 LibraryImport，它生成的代码需要 unsafe -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!--
+      单文件发布时原生库（libdatachannel）要能被找到。
+      IncludeNativeLibrariesForSelfExtract 让它们解压到临时目录而不是
+      被塞进单文件里导致加载失败。
+    -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <SatelliteResourceLanguages>zh-Hans;en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NexusP2P.Agent\NexusP2P.Agent.csproj" />
+  </ItemGroup>
+
+  <!--
+    去掉 WinForms 带来的隐式 using。
+    留着它们会让 Application、DragEventArgs 这些名字在每个文件里都同时
+    指向 WPF 与 WinForms 两个版本，从而全部变成歧义错误。
+    WinForms 只在 TrayPresence.cs 里用到，那个文件自己显式 using。
+  -->
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 部署配置随 exe 走（AD-8）：改一次配置，整个目录拷到另一台机器就都对了 -->
+    <None Include="..\..\packaging\nexusp2p.json" Condition="Exists('..\..\packaging\nexusp2p.json')">
+      <Link>nexusp2p.json</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

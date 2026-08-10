@@ -1,0 +1,61 @@
+=== SIPSorcery DataChannel 吞吐 spike ===
+  总量      : 16 MiB
+  分片      : 64 KiB
+  背压水位  : 8 MiB
+  分片总数  : 256
+  SCTP 节拍 : 50 ms（库默认）
+
+请用 Chrome 或 Edge 打开  http://localhost:5091
+（localhost 属于 secure context，所以 http 下 WebRTC 也可用）
+
+info: Microsoft.Hosting.Lifetime[14] Now listening on: http://localhost:5091
+info: Microsoft.Hosting.Lifetime[0] Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0] Hosting environment: Production
+info: Microsoft.Hosting.Lifetime[0] Content root path: D:\VSProjects\P2P High-Speed File Transfer Platform\spike\SipSorceryThroughput
+浏览器已连接，开始协商…
+  ICE 状态 -> checking
+  已应用 answer：OK
+  ICE 状态 -> connected
+  连接状态 -> connecting
+  连接状态 -> connected
+  DataChannel 已打开
+  SCTP 初始状态: cwnd    4.3 KiB | ssthresh     256 KiB | rwnd  4,608 KiB | 在途    0.0 KiB | 节拍  50 ms | 理论上限   0.08 MiB/s
+
+开始传输：
+  [00:14] 已发        8 MiB |     0.6 MiB/s | 缓冲    4.1 MiB | 托管堆    7.5 MiB | 工作集  114.7 MiB
+            SCTP: cwnd   13.7 KiB | ssthresh     256 KiB | rwnd  4,547 KiB | 在途    8.9 KiB | 节拍  50 ms | 理论上限   0.27 MiB/s
+  [00:29] 已发       12 MiB |     0.3 MiB/s | 缓冲    4.1 MiB | 托管堆   38.6 MiB | 工作集  116.2 MiB
+            SCTP: cwnd   14.8 KiB | ssthresh     256 KiB | rwnd  4,549 KiB | 在途   13.6 KiB | 节拍  50 ms | 理论上限   0.29 MiB/s
+  发送循环结束，等待缓冲排空…
+
+  SCTP 终态: cwnd   16.0 KiB | ssthresh     256 KiB | rwnd  4,608 KiB | 在途    0.0 KiB | 节拍  50 ms | 理论上限   0.31 MiB/s
+
+================ 结果 ================
+  分片大小        : 64 KiB
+  背压水位        : 8 MiB
+
+  发送字节        : 16,777,216
+  接收字节        : 16,777,216  ✓ 一致
+  序号连续性      : ✓ 全部连续，无丢失无错序
+
+  .NET 侧耗时     : 58.41 s
+  .NET 侧吞吐     : 0.3 MiB/s  (0.00 Gbit/s)
+  浏览器侧耗时    : 58.02 s
+  浏览器侧吞吐    : 0.3 MiB/s
+
+  托管堆峰值      : 38.6 MiB
+  工作集峰值      : 124.7 MiB
+  bufferedAmount 峰值 : 8.1 MiB
+
+  背压触发次数    : 2
+  背压等待总时长  : 29.59 s（占 50.7%）
+
+  判定：
+    数据完整      : 通过
+    背压有效      : 通过
+    内存可控      : 通过
+
+  => 假设成立。按此吞吐，20 GiB 在本机回环需 20.77 小时；
+     真实场景瓶颈是家庭上行带宽，不是这一层。
+======================================
+  连接状态 -> closed

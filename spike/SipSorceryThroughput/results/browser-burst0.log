@@ -1,0 +1,43 @@
+页面已加载，等待传输完成…
+  浏览器侧：已接收 0MiB，速率 0MiB/s
+  浏览器侧：已接收 1MiB，速率 0.3MiB/s
+  浏览器侧：已接收 2MiB，速率 0.3MiB/s
+  浏览器侧：已接收 3MiB，速率 0.3MiB/s
+  浏览器侧：已接收 4MiB，速率 0.3MiB/s
+  浏览器侧：已接收 5MiB，速率 0.3MiB/s
+  浏览器侧：已接收 6MiB，速率 0.3MiB/s
+  浏览器侧：已接收 7MiB，速率 0.3MiB/s
+  浏览器侧：已接收 8MiB，速率 0.3MiB/s
+  浏览器侧：已接收 9MiB，速率 0.3MiB/s
+  浏览器侧：已接收 10MiB，速率 0.3MiB/s
+  浏览器侧：已接收 11MiB，速率 0.2MiB/s
+  浏览器侧：已接收 12MiB，速率 0.3MiB/s
+  浏览器侧：已接收 13MiB，速率 0.3MiB/s
+  浏览器侧：已接收 14MiB，速率 0.3MiB/s
+  浏览器侧：已接收 15MiB，速率 0.3MiB/s
+  浏览器侧：已接收 16MiB，速率 0.3MiB/s
+
+--- 浏览器端日志 ---
+正在连接信令…
+信令已连接，等待 offer…
+添加候选失败（通常无害）：Failed to execute 'addIceCandidate' on 'RTCPeerConnection': The remote description was null
+收到 offer，本次将传输 16 MiB，分片 64 KiB
+添加候选失败（通常无害）：Failed to execute 'addIceCandidate' on 'RTCPeerConnection': The remote description was null
+添加候选失败（通常无害）：Failed to execute 'addIceCandidate' on 'RTCPeerConnection': The remote description was null
+添加候选失败（通常无害）：Failed to execute 'addIceCandidate' on 'RTCPeerConnection': The remote description was null
+已发送 answer
+ICE 状态 -> checking
+连接状态 -> connecting
+ICE 状态 -> connected
+连接状态 -> connected
+收到 DataChannel "bulk"
+通道已打开，开始接收
+✓ 接收完成：16,777,216 字节，耗时 58.02s，峰值 0.4 MiB/s
+通道已关闭
+
+--- 浏览器端指标 ---
+  已接收: 16MiB
+  速率: 0.3MiB/s
+  耗时: 58.0s
+  校验: 连续
+  瓶颈: 传输完成 — 平均 0.3 MiB/s，峰值 0.4 MiB/s

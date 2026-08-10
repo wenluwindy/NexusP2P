@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>SIPSorcery DataChannel 吞吐 spike</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --line: #262b36;
+    --text: #e6e9ef;
+    --dim: #8b93a7;
+    --ok: #4ade80;
+    --bad: #f87171;
+    --accent: #60a5fa;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 40px 24px; background: var(--bg); color: var(--text);
+    font: 14px/1.6 ui-monospace, "Cascadia Mono", Consolas, monospace;
+    display: flex; justify-content: center;
+  }
+  main { width: 100%; max-width: 720px; }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 4px; }
+  .sub { color: var(--dim); margin-bottom: 28px; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 20px; margin-bottom: 16px;
+  }
+  .bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin: 16px 0 20px; }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .25s ease; }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px 24px; }
+  .cell .k { color: var(--dim); font-size: 12px; }
+  .cell .v { font-size: 22px; font-variant-numeric: tabular-nums; }
+  .cell .v small { font-size: 13px; color: var(--dim); margin-left: 4px; }
+  .bottleneck { margin-top: 18px; padding: 12px 14px; border-radius: 8px; background: #1d2330; border-left: 3px solid var(--accent); }
+  .bottleneck .k { color: var(--dim); font-size: 12px; }
+  .bottleneck .v { font-size: 15px; }
+  #log { white-space: pre-wrap; color: var(--dim); font-size: 12.5px; max-height: 240px; overflow-y: auto; }
+  .ok { color: var(--ok); }
+  .bad { color: var(--bad); }
+</style>
+</head>
+<body>
+<main>
+  <h1>SIPSorcery DataChannel 吞吐 spike</h1>
+  <div class="sub">验证 .NET 侧能否与浏览器稳定互通并承受大文件级别的传输</div>
+
+  <div class="panel">
+    <div class="bar"><i id="bar"></i></div>
+    <div class="grid">
+      <div class="cell"><div class="k">已接收</div><div class="v" id="recv">0<small>MiB</small></div></div>
+      <div class="cell"><div class="k">实时吞吐</div><div class="v" id="rate">0<small>MiB/s</small></div></div>
+      <div class="cell"><div class="k">耗时</div><div class="v" id="elapsed">0<small>s</small></div></div>
+      <div class="cell"><div class="k">分片校验</div><div class="v" id="seq">—</div></div>
+    </div>
+    <div class="bottleneck">
+      <div class="k">当前瓶颈</div>
+      <div class="v" id="bottleneck">等待连接…</div>
+    </div>
+  </div>
+
+  <div class="panel"><div id="log">正在连接信令…</div></div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const log = m => { const el = $('log'); el.textContent += '\n' + m; el.scrollTop = el.scrollHeight; };
+
+let totalBytes = 0, chunkBytes = 0, reverse = false;
+let received = 0, expectedSeq = 0, sequenceOk = true, firstBadSeq = -1;
+let t0 = 0, lastT = 0, lastBytes = 0, peakRate = 0;
+
+const ws = new WebSocket(`ws://${location.host}/ws`);
+const pc = new RTCPeerConnection({ iceServers: [] });
+
+pc.onicecandidate = e => {
+  if (!e.candidate) return;
+  ws.send(JSON.stringify({
+    type: 'candidate',
+    candidate: e.candidate.candidate,
+    sdpMid: e.candidate.sdpMid,
+    sdpMLineIndex: e.candidate.sdpMLineIndex,
+  }));
+};
+
+pc.onconnectionstatechange = () => log(`连接状态 -> ${pc.connectionState}`);
+pc.oniceconnectionstatechange = () => log(`ICE 状态 -> ${pc.iceConnectionState}`);
+
+pc.ondatachannel = e => {
+  const dc = e.channel;
+  dc.binaryType = 'arraybuffer';
+  log(`收到 DataChannel "${dc.label}"`);
+
+  dc.onopen = () => {
+    $('bottleneck').textContent = '本机回环 — 此处测的是协议栈上限，不是网络';
+    if (reverse) {
+      log('通道已打开，开始由浏览器发送');
+      blast(dc);
+    } else {
+      log('通道已打开，开始接收');
+    }
+  };
+
+  dc.onmessage = ev => {
+    if (typeof ev.data === 'string') { onControl(dc, ev.data); return; }
+    onChunk(ev.data);
+  };
+
+  dc.onclose = () => log('通道已关闭');
+  dc.onerror = err => log(`通道错误：${err}`);
+};
+
+function onChunk(buf) {
+  if (t0 === 0) { t0 = performance.now(); lastT = t0; }
+  received += buf.byteLength;
+
+  // 头尾各写了一份序号（Int64 大端）。seq 远小于 2^32，取低 32 位即可，避免 BigInt 开销。
+  const dv = new DataView(buf);
+  const head = dv.getUint32(4);
+  const tail = dv.getUint32(buf.byteLength - 4);
+  if (sequenceOk && (head !== expectedSeq || tail !== expectedSeq)) {
+    sequenceOk = false;
+    firstBadSeq = expectedSeq;
+    log(`✗ 分片校验失败：期望 seq=${expectedSeq}，实际 head=${head} tail=${tail}`);
+  }
+  expectedSeq++;
+
+  const now = performance.now();
+  if (now - lastT >= 400) {
+    const rate = (received - lastBytes) / 1048576 / ((now - lastT) / 1000);
+    if (rate > peakRate) peakRate = rate;
+    render(rate, (now - t0) / 1000);
+    lastT = now; lastBytes = received;
+  }
+}
+
+function render(rate, elapsed) {
+  $('recv').innerHTML = `${(received / 1048576).toFixed(0)}<small>MiB</small>`;
+  $('rate').innerHTML = `${rate.toFixed(1)}<small>MiB/s</small>`;
+  $('elapsed').innerHTML = `${elapsed.toFixed(1)}<small>s</small>`;
+  $('seq').innerHTML = sequenceOk
+    ? '<span class="ok">连续</span>'
+    : `<span class="bad">断裂 @${firstBadSeq}</span>`;
+  if (totalBytes) $('bar').style.width = `${Math.min(100, received / totalBytes * 100)}%`;
+}
+
+// ---- 反向模式：浏览器作发送端 ----
+// 浏览器这边有 onbufferedamountlow 事件，背压不用轮询，这本身就是个对比点。
+async function blast(dc) {
+  const HIGH_WATER = 8 * 1024 * 1024;
+  dc.bufferedAmountLowThreshold = HIGH_WATER / 2;
+
+  const drained = () => new Promise(resolve => {
+    dc.addEventListener('bufferedamountlow', resolve, { once: true });
+  });
+
+  const chunkCount = Math.floor(totalBytes / chunkBytes);
+  t0 = performance.now(); lastT = t0;
+  let sent = 0;
+
+  for (let seq = 0; seq < chunkCount; seq++) {
+    if (dc.bufferedAmount > HIGH_WATER) await drained();
+    if (dc.readyState !== 'open') { log('通道提前关闭，中止'); return; }
+
+    const buf = new ArrayBuffer(chunkBytes);
+    const dv = new DataView(buf);
+    dv.setUint32(4, seq);
+    dv.setUint32(chunkBytes - 4, seq);
+    dc.send(buf);
+    sent += chunkBytes;
+
+    const now = performance.now();
+    if (now - lastT >= 400) {
+      received = sent; // 复用同一套显示
+      const rate = (sent - lastBytes) / 1048576 / ((now - lastT) / 1000);
+      if (rate > peakRate) peakRate = rate;
+      render(rate, (now - t0) / 1000);
+      lastT = now; lastBytes = sent;
+      await new Promise(r => setTimeout(r, 0)); // 让出主线程，保证 UI 和 SCTP 能推进
+    }
+  }
+
+  while (dc.bufferedAmount > 0) await new Promise(r => setTimeout(r, 10));
+
+  const seconds = (performance.now() - t0) / 1000;
+  received = sent;
+  render(sent / 1048576 / seconds, seconds);
+  log(`✓ 发送完成：${sent.toLocaleString()} 字节，耗时 ${seconds.toFixed(2)}s，` +
+      `平均 ${(sent / 1048576 / seconds).toFixed(1)} MiB/s`);
+  $('bottleneck').textContent = `发送完成 — 平均 ${(sent / 1048576 / seconds).toFixed(1)} MiB/s`;
+
+  dc.send(JSON.stringify({
+    type: 'report', bytesSent: sent, seconds,
+    peakRateMiBps: peakRate, sequenceOk: true, firstBadSeq: -1,
+    bytesReceived: sent,
+  }));
+}
+
+function onControl(dc, raw) {
+  const msg = JSON.parse(raw);
+  if (msg.type !== 'eof') return;
+
+  const seconds = (performance.now() - t0) / 1000;
+  render(received / 1048576 / seconds, seconds);
+
+  const complete = received === msg.totalBytes;
+  log(complete
+    ? `✓ 接收完成：${received.toLocaleString()} 字节，耗时 ${seconds.toFixed(2)}s，峰值 ${peakRate.toFixed(1)} MiB/s`
+    : `✗ 字节数不符：收到 ${received.toLocaleString()}，应为 ${msg.totalBytes.toLocaleString()}`);
+
+  $('bottleneck').textContent = complete && sequenceOk
+    ? `传输完成 — 平均 ${(received / 1048576 / seconds).toFixed(1)} MiB/s，峰值 ${peakRate.toFixed(1)} MiB/s`
+    : '传输异常，见下方日志';
+
+  dc.send(JSON.stringify({
+    type: 'report',
+    bytesReceived: received,
+    seconds,
+    peakRateMiBps: peakRate,
+    sequenceOk,
+    firstBadSeq,
+  }));
+}
+
+ws.onopen = () => log('信令已连接，等待 offer…');
+ws.onerror = () => log('信令连接出错');
+
+ws.onmessage = async ev => {
+  const msg = JSON.parse(ev.data);
+  if (msg.type === 'offer') {
+    totalBytes = msg.totalBytes || 0;
+    chunkBytes = msg.chunkBytes || 0;
+    reverse = !!msg.reverse;
+    log(`收到 offer，方向=${reverse ? '浏览器发 -> .NET 收' : '.NET 发 -> 浏览器收'}，` +
+        `总量 ${(totalBytes / 1048576).toFixed(0)} MiB，分片 ${chunkBytes / 1024} KiB`);
+    await pc.setRemoteDescription({ type: 'offer', sdp: msg.sdp });
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    ws.send(JSON.stringify({ type: 'answer', sdp: answer.sdp }));
+    log('已发送 answer');
+  } else if (msg.type === 'candidate') {
+    try {
+      await pc.addIceCandidate({
+        candidate: msg.candidate,
+        sdpMid: msg.sdpMid,
+        sdpMLineIndex: msg.sdpMLineIndex,
+      });
+    } catch (e) {
+      log(`添加候选失败（通常无害）：${e.message}`);
+    }
+  }
+};
+</script>
+</body>
+</html>

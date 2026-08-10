@@ -1,0 +1,12 @@
+{
+  "name": "nexusp2p-browser-storage-spike",
+  "private": true,
+  "type": "module",
+  "description": "Task 0.2：实测浏览器三种落盘策略的上限",
+  "scripts": {
+    "spike": "node run.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  }
+}

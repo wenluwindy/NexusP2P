@@ -1,0 +1,50 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{json,yml,yaml,md,ts,js,html,css}]
+indent_size = 2
+
+[*.{csproj,props,targets,config,xml}]
+indent_size = 2
+
+[*.cs]
+# 语言约定
+csharp_using_directive_placement = outside_namespace:warning
+csharp_style_namespace_declarations = file_scoped:warning
+csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_prefer_braces = when_multiline:suggestion
+csharp_style_prefer_primary_constructors = true:suggestion
+dotnet_style_require_accessibility_modifiers = for_non_interface_members:warning
+dotnet_style_readonly_field = true:warning
+
+# 命名：私有字段 _camelCase
+dotnet_naming_rule.private_fields_underscore.symbols = private_fields
+dotnet_naming_rule.private_fields_underscore.style = underscore_camel
+dotnet_naming_rule.private_fields_underscore.severity = warning
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+dotnet_naming_style.underscore_camel.required_prefix = _
+dotnet_naming_style.underscore_camel.capitalization = camel_case
+
+# 这个项目大量处理二进制与哈希，Span/stackalloc 是常态，不要为此报警
+dotnet_diagnostic.CA1062.severity = none
+
+# CA1848（要求用 LoggerMessage 源生成委托）：刻意豁免。
+# 这条规则针对的是每包/每请求级别的高频日志路径，而本项目的日志只在
+# 建房、入房、离开、回收这些每次传输发生几次的地方。为它给每个类加上
+# partial 与一串分部方法声明是纯样板噪音，收益为零。
+# 若将来出现「每个分片打一条日志」这类热路径，应当回来重新评估。
+dotnet_diagnostic.CA1848.severity = none
+# 不做本地化，字符串比较不需要显式指定文化
+dotnet_diagnostic.CA1303.severity = none
+dotnet_diagnostic.CA1305.severity = none
+dotnet_diagnostic.CA1307.severity = none
+dotnet_diagnostic.CA1310.severity = none

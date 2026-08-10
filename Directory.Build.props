@@ -1,0 +1,53 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- 计划里的 Definition of Done：构建零警告。把警告提成错误来强制执行，
+         而不是靠自觉去看输出。 -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+
+    <!-- 这个项目全程处理不可信输入与加密，值得让编译器多管一点闲事 -->
+    <CheckForOverflowUnderflow>true</CheckForOverflowUnderflow>
+
+    <NeutralLanguage>zh-CN</NeutralLanguage>
+
+    <!--
+      不带 ICU 跑。服务端与命令行都只输出固定格式的数字与日期，
+      省掉 ICU 让 Linux 上少一个系统依赖（有些精简镜像根本没装）。
+
+      **图形界面项目必须关掉它** —— 见 NexusP2P.Desktop.csproj。
+    -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <!-- 测试工程不需要生成文档注释警告，也不对外发布 -->
+  <PropertyGroup Condition="$(MSBuildProjectName.EndsWith('.Tests'))">
+    <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);CA1707;CA2007</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    约定：每个产品工程都对同名的 .Tests 与集成测试开放 internal 成员。
+    这样安全关键的不变式（比如 nonce 由位置派生）可以被直接测到，
+    而不必为了可测性把实现细节暴露进公开 API。
+  -->
+  <ItemGroup Condition="!$(MSBuildProjectName.EndsWith('.Tests'))">
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>$(MSBuildProjectName).Tests</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>NexusP2P.Integration.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>

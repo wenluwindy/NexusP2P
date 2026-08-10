@@ -1,0 +1,25 @@
+# .NET build output
+**/bin/
+**/obj/
+
+# Node dependencies and local reports
+**/node_modules/
+**/coverage/
+**/TestResults/
+
+# Local IDE and user settings
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Local publish/build artifacts
+artifacts/
+publish/
+
+# Generated release packages (large binaries are distributed separately)
+dist/
+
+# OS files
+.DS_Store
+Thumbs.db

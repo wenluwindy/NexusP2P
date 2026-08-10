@@ -1,0 +1,250 @@
+<Window x:Class="NexusP2P.Desktop.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="NexusP2P" Height="700" Width="620"
+        MinHeight="560" MinWidth="520"
+        Background="{StaticResource Surface}"
+        AllowDrop="True"
+        Closing="OnClosing">
+
+    <DockPanel>
+        <!-- 标题栏 -->
+        <Border DockPanel.Dock="Top" Background="{StaticResource HeaderBrush}" Padding="24,18">
+            <StackPanel>
+                <TextBlock Text="NexusP2P" FontSize="24" FontWeight="Bold" Foreground="White" />
+                <TextBlock Text="点对点直连传输，内容端到端加密" FontSize="12"
+                           Foreground="#E8E5F5" Margin="0,4,0,0" />
+            </StackPanel>
+        </Border>
+
+        <!-- 配置问题条：缺信令地址时显示，而不是等用户点了才报错 -->
+        <Border x:Name="ConfigWarning" DockPanel.Dock="Top" Background="#FEF3C7"
+                Padding="16,10" Visibility="Collapsed">
+            <TextBlock x:Name="ConfigWarningText" Foreground="#92400E" FontSize="12" />
+        </Border>
+
+        <TabControl x:Name="Tabs" BorderThickness="0" Background="{StaticResource Surface}"
+                    Padding="20,16">
+            <TabItem Header="发送">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <Border x:Name="DropZone" BorderBrush="{StaticResource Border}"
+                                BorderThickness="2" CornerRadius="8" Padding="24,32"
+                                Background="{StaticResource Surface}"
+                                AllowDrop="True" Drop="OnDrop"
+                                DragEnter="OnDragEnter" DragOver="OnDragEnter" DragLeave="OnDragLeave">
+                            <StackPanel>
+                                <TextBlock Text="把文件或文件夹拖到这里" FontSize="15"
+                                           HorizontalAlignment="Center"
+                                           Foreground="{StaticResource TextSecondary}" />
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"
+                                            Margin="0,16,0,0">
+                                    <Button Content="选择文件" Style="{StaticResource PrimaryButton}"
+                                            Click="OnPickFile" Margin="0,0,10,0" />
+                                    <Button Content="选择文件夹" Style="{StaticResource SecondaryButton}"
+                                            Click="OnPickFolder" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock x:Name="SelectedPath" Margin="0,14,0,0" FontSize="13"
+                                   Visibility="Collapsed" />
+
+                        <Button x:Name="SendButton" Content="生成文件码并等待对方"
+                                Style="{StaticResource PrimaryButton}"
+                                Margin="0,16,0,0" Click="OnStartSend"
+                                IsEnabled="False" />
+
+                        <!-- 文件码区：建房成功后立刻显示，不等对方进来 -->
+                        <Border x:Name="CodePanel" Background="{StaticResource SurfaceAlt}"
+                                CornerRadius="8" Padding="18" Margin="0,18,0,0"
+                                Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock Text="文件码" Style="{StaticResource Caption}" />
+                                <TextBox x:Name="CodeText" Style="{StaticResource CodeDisplay}"
+                                         Margin="0,6,0,10" />
+
+                                <TextBlock Text="分享链接（含密钥，推荐直接发这个）"
+                                           Style="{StaticResource Caption}" Margin="0,8,0,0" />
+                                <TextBox x:Name="ShareUrlText" IsReadOnly="True" Margin="0,6,0,8"
+                                         FontFamily="Consolas" FontSize="11" TextWrapping="Wrap"
+                                         Background="{StaticResource Surface}" />
+
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Content="复制文件码" Style="{StaticResource SecondaryButton}"
+                                            Click="OnCopyCode" Margin="0,0,8,0" />
+                                    <Button Content="复制分享链接" Style="{StaticResource SecondaryButton}"
+                                            Click="OnCopyLink" />
+                                </StackPanel>
+
+                                <TextBlock Style="{StaticResource Caption}" Margin="0,10,0,0"
+                                           Text="密钥在链接的 # 之后，按规范永远不会发送到服务器 —— 这就是服务器即使中继流量也无法解密的原因。" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 进度区 -->
+                        <Border x:Name="SendProgressPanel" Background="{StaticResource SurfaceAlt}"
+                                CornerRadius="8" Padding="18" Margin="0,18,0,0"
+                                Visibility="Collapsed">
+                            <StackPanel>
+                                <Grid>
+                                    <TextBlock x:Name="SendStatus" FontSize="13" FontWeight="SemiBold" />
+                                    <TextBlock x:Name="SendConnection" HorizontalAlignment="Right"
+                                               Style="{StaticResource Caption}" />
+                                </Grid>
+
+                                <ProgressBar x:Name="SendBar" Style="{StaticResource TransferProgress}"
+                                             Margin="0,10,0,8" Maximum="1" />
+
+                                <Grid>
+                                    <TextBlock x:Name="SendNumbers" Style="{StaticResource Caption}"
+                                               FontFamily="Consolas" />
+                                    <TextBlock x:Name="SendEta" HorizontalAlignment="Right"
+                                               Style="{StaticResource Caption}" FontFamily="Consolas" />
+                                </Grid>
+
+                                <Border Background="{StaticResource Surface}" CornerRadius="4"
+                                        Padding="10,8" Margin="0,10,0,0" BorderThickness="3,0,0,0"
+                                        BorderBrush="{StaticResource Primary}">
+                                    <TextBlock x:Name="SendBottleneck" FontSize="12"
+                                               Foreground="{StaticResource TextSecondary}" />
+                                </Border>
+
+                                <Button x:Name="SendCancelButton" Content="取消"
+                                        Style="{StaticResource DangerButton}"
+                                        Margin="0,12,0,0" Click="OnCancel" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="接收">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <TextBlock Text="分享链接或九位文件码" Style="{StaticResource Caption}" />
+                        <TextBox x:Name="ReceiveInput" Margin="0,6,0,14"
+                                 TextChanged="OnReceiveInputChanged" />
+
+                        <TextBlock Text="密钥（粘贴完整分享链接时可留空）"
+                                   Style="{StaticResource Caption}" />
+                        <TextBox x:Name="ReceiveKey" Margin="0,6,0,14" FontFamily="Consolas"
+                                 FontSize="12" />
+
+                        <TextBlock Text="保存到" Style="{StaticResource Caption}" />
+                        <Grid Margin="0,6,0,14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="ReceiveFolder" IsReadOnly="True" FontSize="12" />
+                            <Button Grid.Column="1" Content="更改…" Margin="8,0,0,0"
+                                    Style="{StaticResource SecondaryButton}" Click="OnPickFolderForReceive" />
+                        </Grid>
+
+                        <Button x:Name="ReceiveButton" Content="开始接收"
+                                Style="{StaticResource PrimaryButton}" Click="OnStartReceive" />
+
+                        <Border x:Name="ReceiveProgressPanel" Background="{StaticResource SurfaceAlt}"
+                                CornerRadius="8" Padding="18" Margin="0,18,0,0"
+                                Visibility="Collapsed">
+                            <StackPanel>
+                                <Grid>
+                                    <TextBlock x:Name="ReceiveStatus" FontSize="13" FontWeight="SemiBold" />
+                                    <TextBlock x:Name="ReceiveConnection" HorizontalAlignment="Right"
+                                               Style="{StaticResource Caption}" />
+                                </Grid>
+
+                                <ProgressBar x:Name="ReceiveBar" Style="{StaticResource TransferProgress}"
+                                             Margin="0,10,0,8" Maximum="1" />
+
+                                <Grid>
+                                    <TextBlock x:Name="ReceiveNumbers" Style="{StaticResource Caption}"
+                                               FontFamily="Consolas" />
+                                    <TextBlock x:Name="ReceiveEta" HorizontalAlignment="Right"
+                                               Style="{StaticResource Caption}" FontFamily="Consolas" />
+                                </Grid>
+
+                                <Border Background="{StaticResource Surface}" CornerRadius="4"
+                                        Padding="10,8" Margin="0,10,0,0" BorderThickness="3,0,0,0"
+                                        BorderBrush="{StaticResource Primary}">
+                                    <TextBlock x:Name="ReceiveBottleneck" FontSize="12"
+                                               Foreground="{StaticResource TextSecondary}" />
+                                </Border>
+
+                                <Button x:Name="ReceiveCancelButton" Content="取消"
+                                        Style="{StaticResource DangerButton}"
+                                        Margin="0,12,0,0" Click="OnCancel" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 收完之后列出落地的文件，并给一个「打开文件夹」 -->
+                        <Border x:Name="LandedPanel" Background="{StaticResource SurfaceAlt}"
+                                CornerRadius="8" Padding="18" Margin="0,14,0,0"
+                                Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock x:Name="LandedTitle" FontWeight="SemiBold" FontSize="13" />
+                                <ItemsControl x:Name="LandedFiles" Margin="0,8,0,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}" FontSize="11"
+                                                       FontFamily="Consolas"
+                                                       Foreground="{StaticResource TextSecondary}"
+                                                       Margin="0,2,0,0" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Button Content="打开所在文件夹" Style="{StaticResource SecondaryButton}"
+                                        Margin="0,12,0,0" HorizontalAlignment="Left"
+                                        Click="OnOpenReceiveFolder" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="设置">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <TextBlock Text="信令服务器" FontWeight="SemiBold" FontSize="14"
+                                   Margin="0,0,0,8" />
+                        <TextBox x:Name="SignalingInput" />
+                        <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0"
+                                   Text="形如 https://p2p.你的域名。信令服务器只负责把两端接上；它拿不到密钥，因此看不到文件内容和文件名。" />
+                        <Button Content="保存" Style="{StaticResource PrimaryButton}"
+                                Margin="0,10,0,0" HorizontalAlignment="Left" Click="OnSaveSignaling" />
+
+                        <Separator Margin="0,20,0,16" />
+
+                        <TextBlock Text="接收" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,10" />
+                        <CheckBox x:Name="NotificationsCheck" Content="传输完成或失败时弹系统通知"
+                                  Click="OnSettingsToggled" />
+                        <CheckBox x:Name="TrayCheck" Content="关闭窗口时最小化到托盘（传输继续进行）"
+                                  Click="OnSettingsToggled" />
+                        <TextBlock x:Name="TrayNote" Style="{StaticResource Caption}"
+                                   Visibility="Collapsed" Margin="0,0,0,10" />
+
+                        <!--
+                            一个明确的退出入口。
+                            勾了「最小化到托盘」之后，关窗只是隐藏 —— 而托盘图标
+                            常常被折叠进「显示隐藏的图标」里，用户找不到就会觉得
+                            「这软件关不掉」。放一个按钮在这里，不依赖托盘。
+                        -->
+                        <Button Content="退出程序" Style="{StaticResource SecondaryButton}"
+                                HorizontalAlignment="Left" Margin="0,6,0,0" Click="OnQuit" />
+                        <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0"
+                                   Text="关闭窗口只是缩到托盘，传输不会中断。要完全退出用这个按钮，或托盘图标右键菜单里的「退出」。" />
+
+                        <Separator Margin="0,20,0,16" />
+
+                        <TextBlock Text="关于" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,8" />
+                        <TextBlock Style="{StaticResource Caption}"
+                                   Text="传输内容用 AES-256-GCM 加密，完整性由 SHA-256 Merkle 树逐分片校验。断线自动重连 3 次；进度按内容记录，关掉程序重开也能接着传。" />
+                        <TextBlock x:Name="ConfigPathText" Style="{StaticResource Caption}"
+                                   Margin="0,10,0,0" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>

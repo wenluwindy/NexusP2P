@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\NexusP2P.Core\NexusP2P.Core.csproj" />
+    <ProjectReference Include="..\NexusP2P.Transfer\NexusP2P.Transfer.csproj" />
+    <ProjectReference Include="..\NexusP2P.Transport.WebRtc\NexusP2P.Transport.WebRtc.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

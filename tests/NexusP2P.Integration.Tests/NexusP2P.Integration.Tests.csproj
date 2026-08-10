@@ -1,0 +1,36 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.2" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.*" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.8.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NexusP2P.Transfer\NexusP2P.Transfer.csproj" />
+    <ProjectReference Include="..\..\src\NexusP2P.Transport.Abstractions\NexusP2P.Transport.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\NexusP2P.Signaling\NexusP2P.Signaling.csproj" />
+    <ProjectReference Include="..\..\src\NexusP2P.Transport.WebRtc\NexusP2P.Transport.WebRtc.csproj" />
+    <ProjectReference Include="..\..\src\NexusP2P.Agent\NexusP2P.Agent.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 测试里要直接构建 WebApplication 来起真实 Kestrel -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+</Project>

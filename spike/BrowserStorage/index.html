@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>NexusP2P — 浏览器落盘能力实测（Task 0.2）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 60rem; line-height: 1.6; }
+  table { border-collapse: collapse; margin-top: 1rem; width: 100%; }
+  th, td { border: 1px solid #ccc; padding: .4rem .6rem; text-align: left; font-size: .9rem; }
+  th { background: #f4f4f4; }
+  .ok { color: #1a7f37; } .bad { color: #b3261e; }
+  button { padding: .5rem 1rem; margin-right: .5rem; }
+  pre { background: #f6f8fa; padding: 1rem; overflow-x: auto; font-size: .85rem; }
+</style>
+</head>
+<body>
+<h1>浏览器落盘能力实测</h1>
+
+<p>
+  三种落盘策略的实际上限。<b>全部按能力探测，不读 UA</b>（AD-6）——
+  UA 判断会在浏览器更新后悄悄地判错，而能力探测问的就是我们真正要用的那个 API。
+</p>
+
+<div id="capabilities"></div>
+
+<p>
+  <button id="run-auto">跑自动可测的部分（OPFS + Blob）</button>
+  <button id="run-picker">跑流式落盘（会弹出保存对话框）</button>
+</p>
+
+<div id="results"></div>
+<pre id="log"></pre>
+
+<script type="module">
+const CHUNK = 1024 * 1024;               // 1 MiB，与传输分片同量级
+const GIB = 1024 * 1024 * 1024;
+const SIZES = [1 * GIB, 2 * GIB, 5 * GIB];
+
+const logEl = document.getElementById('log');
+function log(line) {
+  logEl.textContent += line + '\n';
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+/**
+ * 确定性伪随机流。
+ *
+ * 用它而不是 crypto.getRandomValues：写完之后要逐字节校验读回来的内容，
+ * 而 5 GiB 的期望值不可能留在内存里。同一个种子重放一遍就是期望值。
+ * 内容也必须是不可压缩的 —— 全零会让文件系统与 Blob 的压缩/稀疏优化
+ * 把测出来的上限抬到不真实的高度。
+ */
+function makeStream(seed) {
+  let s = seed >>> 0;
+  return function fill(buffer) {
+    const view = new Uint32Array(buffer.buffer, buffer.byteOffset, buffer.byteLength >>> 2);
+    for (let i = 0; i < view.length; i++) {
+      s ^= s << 13; s >>>= 0;
+      s ^= s >>> 17;
+      s ^= s << 5;  s >>>= 0;
+      view[i] = s;
+    }
+    return buffer;
+  };
+}
+
+function heapUsed() {
+  // Chromium 系才有。Firefox 上取不到就如实记 null，不要编一个数字。
+  return performance.memory ? performance.memory.usedJSHeapSize : null;
+}
+
+const capabilities = {
+  // 流式落盘：唯一一种「不受内存限制」的路径
+  saveFilePicker: typeof window.showSaveFilePicker === 'function',
+  // OPFS：源私有文件系统，配额受浏览器策略限制
+  opfs: !!(navigator.storage && typeof navigator.storage.getDirectory === 'function'),
+  opfsWritable: false,   // 下面异步补
+  blob: typeof Blob === 'function',
+  storageEstimate: !!(navigator.storage && typeof navigator.storage.estimate === 'function'),
+};
+
+async function probe() {
+  if (capabilities.opfs) {
+    try {
+      const root = await navigator.storage.getDirectory();
+      const handle = await root.getFileHandle('__probe', { create: true });
+      capabilities.opfsWritable = typeof handle.createWritable === 'function';
+      await root.removeEntry('__probe');
+    } catch (e) {
+      capabilities.opfsWritable = false;
+      capabilities.opfsError = String(e);
+    }
+  }
+
+  if (capabilities.storageEstimate) {
+    const estimate = await navigator.storage.estimate();
+    capabilities.quotaBytes = estimate.quota ?? null;
+    capabilities.usageBytes = estimate.usage ?? null;
+  }
+
+  capabilities.persisted = navigator.storage?.persisted
+    ? await navigator.storage.persisted()
+    : null;
+
+  render();
+  return capabilities;
+}
+
+function render() {
+  document.getElementById('capabilities').innerHTML =
+    '<h2>能力探测</h2><pre>' + JSON.stringify(capabilities, null, 2) + '</pre>';
+}
+
+// ── 策略实现 ────────────────────────────────────────────
+
+async function writeOpfs(bytes, onProgress) {
+  const root = await navigator.storage.getDirectory();
+  const handle = await root.getFileHandle('spike.bin', { create: true });
+  const writable = await handle.createWritable();
+
+  const fill = makeStream(0xC0FFEE);
+  const buffer = new Uint8Array(CHUNK);
+  let peak = 0;
+
+  try {
+    for (let written = 0; written < bytes; written += CHUNK) {
+      const take = Math.min(CHUNK, bytes - written);
+      fill(buffer);
+      await writable.write(take === CHUNK ? buffer : buffer.subarray(0, take));
+
+      const used = heapUsed();
+      if (used !== null && used > peak) peak = used;
+      if ((written / CHUNK) % 256 === 0) onProgress(written);
+    }
+    await writable.close();
+  } catch (e) {
+    try { await writable.abort(); } catch { /* 已经坏了 */ }
+    throw e;
+  }
+
+  return { peakHeap: peak || null, verify: () => verifyOpfs(bytes) };
+}
+
+async function verifyOpfs(bytes) {
+  const root = await navigator.storage.getDirectory();
+  const file = await (await root.getFileHandle('spike.bin')).getFile();
+  if (file.size !== bytes) return `大小不符：期望 ${bytes}，实际 ${file.size}`;
+  return await verifyBlob(file, bytes);
+}
+
+async function writeBlob(bytes, onProgress) {
+  const fill = makeStream(0xC0FFEE);
+  const parts = [];
+  let peak = 0;
+
+  for (let written = 0; written < bytes; written += CHUNK) {
+    const take = Math.min(CHUNK, bytes - written);
+    // 每块都要新分配：Blob 只是引用，复用同一个缓冲区会让所有块内容相同
+    const chunk = new Uint8Array(take);
+    fill(chunk);
+    parts.push(chunk);
+
+    const used = heapUsed();
+    if (used !== null && used > peak) peak = used;
+    if ((written / CHUNK) % 256 === 0) {
+      onProgress(written);
+      await new Promise(r => setTimeout(r));   // 让出线程，否则页面直接假死
+    }
+  }
+
+  const blob = new Blob(parts, { type: 'application/octet-stream' });
+  if (blob.size !== bytes) throw new Error(`Blob 大小不符：${blob.size} ≠ ${bytes}`);
+
+  return { peakHeap: peak || null, verify: () => verifyBlob(blob, bytes) };
+}
+
+/** 逐块与重放的伪随机流比对。抽样是为了不让校验本身成为耗时大头。 */
+async function verifyBlob(blob, bytes) {
+  const fill = makeStream(0xC0FFEE);
+  const expected = new Uint8Array(CHUNK);
+  const total = Math.ceil(bytes / CHUNK);
+
+  // 1 GiB 及以下全量校验；更大的抽查头、中、尾各 16 块
+  const full = bytes <= GIB;
+  const sample = new Set();
+  if (!full) {
+    for (let i = 0; i < 16; i++) {
+      sample.add(i);
+      sample.add(Math.floor(total / 2) + i);
+      sample.add(total - 1 - i);
+    }
+  }
+
+  for (let index = 0; index < total; index++) {
+    const take = Math.min(CHUNK, bytes - index * CHUNK);
+    fill(expected);   // 必须每块都推进，否则后面的期望值就错位了
+
+    if (!full && !sample.has(index)) continue;
+
+    const actual = new Uint8Array(
+      await blob.slice(index * CHUNK, index * CHUNK + take).arrayBuffer());
+
+    for (let i = 0; i < take; i++) {
+      if (actual[i] !== expected[i]) {
+        return `第 ${index} 块第 ${i} 字节不符`;
+      }
+    }
+  }
+
+  return full ? 'ok(全量)' : 'ok(抽样)';
+}
+
+async function writePicker(bytes, onProgress) {
+  const handle = await window.showSaveFilePicker({ suggestedName: 'spike.bin' });
+  const writable = await handle.createWritable();
+  const fill = makeStream(0xC0FFEE);
+  const buffer = new Uint8Array(CHUNK);
+  let peak = 0;
+
+  for (let written = 0; written < bytes; written += CHUNK) {
+    const take = Math.min(CHUNK, bytes - written);
+    fill(buffer);
+    await writable.write(take === CHUNK ? buffer : buffer.subarray(0, take));
+
+    const used = heapUsed();
+    if (used !== null && used > peak) peak = used;
+    if ((written / CHUNK) % 256 === 0) onProgress(written);
+  }
+
+  await writable.close();
+  return { peakHeap: peak || null, verify: async () => verifyBlob(await handle.getFile(), bytes) };
+}
+
+const STRATEGIES = {
+  opfs: { label: 'OPFS', run: writeOpfs, available: () => capabilities.opfsWritable },
+  blob: { label: '内存 Blob', run: writeBlob, available: () => capabilities.blob },
+  picker: { label: '流式落盘 (showSaveFilePicker)', run: writePicker, available: () => capabilities.saveFilePicker },
+};
+
+async function cleanup() {
+  try {
+    const root = await navigator.storage.getDirectory();
+    await root.removeEntry('spike.bin');
+  } catch { /* 本来就没有 */ }
+}
+
+/** 跑一个策略的一个尺寸，返回结构化结果。Playwright 直接调它。 */
+async function runOne(name, bytes) {
+  const strategy = STRATEGIES[name];
+  if (!strategy) throw new Error(`未知策略 ${name}`);
+  if (!strategy.available()) {
+    return { strategy: name, bytes, supported: false };
+  }
+
+  await cleanup();
+  const started = performance.now();
+
+  try {
+    const { peakHeap, verify } = await strategy.run(bytes, w =>
+      log(`${strategy.label} ${(bytes / GIB).toFixed(0)} GiB：已写 ${(w / GIB).toFixed(2)} GiB`));
+
+    const elapsed = (performance.now() - started) / 1000;
+    const verified = await verify();
+
+    return {
+      strategy: name, bytes, supported: true, ok: verified.startsWith('ok'),
+      seconds: +elapsed.toFixed(1),
+      mibPerSecond: +((bytes / 1048576) / elapsed).toFixed(1),
+      peakHeapMiB: peakHeap ? +(peakHeap / 1048576).toFixed(0) : null,
+      verified,
+    };
+  } catch (e) {
+    return {
+      strategy: name, bytes, supported: true, ok: false,
+      seconds: +((performance.now() - started) / 1000).toFixed(1),
+      error: `${e.name}: ${e.message}`,
+    };
+  } finally {
+    await cleanup();
+  }
+}
+
+/** 一个策略沿尺寸梯度往上爬，失败即停 —— 记录的就是「在哪一档失败」。 */
+async function runGradient(name, sizes = SIZES) {
+  const results = [];
+  for (const bytes of sizes) {
+    const result = await runOne(name, bytes);
+    results.push(result);
+    log(JSON.stringify(result));
+    if (!result.supported || !result.ok) break;
+  }
+  return results;
+}
+
+function show(rows) {
+  const cells = rows.map(r => `<tr>
+    <td>${STRATEGIES[r.strategy]?.label ?? r.strategy}</td>
+    <td>${(r.bytes / GIB).toFixed(0)} GiB</td>
+    <td class="${r.ok ? 'ok' : 'bad'}">${!r.supported ? '不支持' : r.ok ? '成功' : '失败'}</td>
+    <td>${r.mibPerSecond ?? '—'}</td>
+    <td>${r.peakHeapMiB ?? '—'}</td>
+    <td>${r.error ?? r.verified ?? ''}</td>
+  </tr>`).join('');
+
+  document.getElementById('results').innerHTML = `<h2>结果</h2><table>
+    <tr><th>策略</th><th>尺寸</th><th>结果</th><th>MiB/s</th><th>堆峰值 MiB</th><th>备注</th></tr>
+    ${cells}</table>`;
+}
+
+document.getElementById('run-auto').addEventListener('click', async () => {
+  const rows = [...await runGradient('opfs'), ...await runGradient('blob')];
+  show(rows);
+});
+
+document.getElementById('run-picker').addEventListener('click', async () => {
+  show(await runGradient('picker'));
+});
+
+// 给 Playwright 用的入口。
+//
+// ready 必须等 probe 跑完再 resolve：capabilities 是异步填的，
+// 只判断 window.spike 存在就去读它，读到的是一张还没填好的表 ——
+// 表现为「浏览器不支持 OPFS」这种完全错误的结论。
+window.spike = { probe, runOne, runGradient, capabilities, SIZES, ready: probe() };
+
+await window.spike.ready;
+</script>
+</body>
+</html>
