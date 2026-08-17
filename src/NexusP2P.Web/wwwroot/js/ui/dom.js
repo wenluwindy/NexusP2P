@@ -70,19 +70,38 @@ function bindUpload() {
 }
 
 function bindSendActions() {
-    $('startSendBtn').addEventListener('click', () => handlers.onStartSend());
-    $('cancelSendBtn').addEventListener('click', () => handlers.onCancel());
+    // 包一层：处理器里抛出的同步异常与 reject 都会被浏览器静默吞掉，
+    // 用户看到的就是「点了没反应」。宁可弹一条错误也不要毫无反馈。
+    $('startSendBtn').addEventListener('click', () => guard(() => handlers.onStartSend()));
+    $('cancelSendBtn').addEventListener('click', () => guard(() => handlers.onCancel()));
 
     $('copyCodeBtn').addEventListener('click', () => copyText($('shareCode').dataset.raw, '文件码'));
     $('copyLinkBtn').addEventListener('click', () => copyText($('shareLink').textContent, '分享链接'));
     $('copyKeyBtn').addEventListener('click', () => copyText($('shareKey').textContent, '密钥'));
 }
 
-function bindReceiveActions() {
-    $('startReceiveBtn').addEventListener('click', () =>
-        handlers.onStartReceive($('receiveInput').value.trim(), $('receiveKey').value));
+/** 跑一个界面动作，出了意外就说出来 —— 不留「点了没反应」这种状态。 */
+function guard(action) {
+    try {
+        const result = action();
+        if (result instanceof Promise) {
+            result.catch(reportUnexpected);
+        }
+    } catch (error) {
+        reportUnexpected(error);
+    }
+}
 
-    $('cancelReceiveBtn').addEventListener('click', () => handlers.onCancel());
+function reportUnexpected(error) {
+    console.error(error);
+    notify(`界面出错：${error?.message ?? error}。请刷新页面（Ctrl+F5）后重试。`, 'error');
+}
+
+function bindReceiveActions() {
+    $('startReceiveBtn').addEventListener('click', () => guard(() =>
+        handlers.onStartReceive($('receiveInput').value.trim(), $('receiveKey').value)));
+
+    $('cancelReceiveBtn').addEventListener('click', () => guard(() => handlers.onCancel()));
 }
 
 function bindSettings(origin) {
@@ -152,9 +171,15 @@ export function setSendPhase(phase) {
     show('hashPanel', phase === 'hashing');
     show('sendSummary', phase === 'ready' || phase === 'waiting' || phase === 'transferring');
     show('startSendBtn', phase === 'ready');
+    show('maxPeersGroup', phase === 'ready');
     show('sendPanel', phase === 'waiting' || phase === 'transferring' || phase === 'done');
     show('sendProgress', phase === 'transferring' || phase === 'done' || phase === 'failed');
     show('cancelSendBtn', phase === 'waiting' || phase === 'transferring');
+
+    if (phase === 'idle' || phase === 'ready') {
+        $('receiverList').textContent = '';
+        show('receiverList', false);
+    }
 
     if (phase === 'waiting') {
         setSendStatus('等待对方接收…');
@@ -162,6 +187,82 @@ export function setSendPhase(phase) {
         setSendStatus('传输完成。');
         setBar('sendProgressBar', 100);
     }
+}
+
+/**
+ * 读「允许接收人数」。默认 1 = 一对一（V1 行为）。
+ *
+ * 只保证下界（至少 1 个人）—— 上界不在这里定：服务器会把请求夹到它
+ * 自己配置的席位上限，并在 `created` 里回显生效值，界面按回显说明。
+ *
+ * 找不到输入框时返回 1 而不是抛异常：这个值只是可选的扇出上限，
+ * 不该因为它让整个「生成文件码」流程崩掉（曾经因为浏览器缓存了
+ * 旧版本的这个文件、元素 id 对不上，点按钮直接静默失效）。
+ */
+export function readMaxPeers() {
+    const input = document.getElementById('maxPeersInput');
+    if (input === null) {
+        return 1;
+    }
+
+    const value = Number.parseInt(input.value, 10);
+    if (!Number.isInteger(value)) {
+        return 1;
+    }
+
+    return Math.max(1, value);
+}
+
+/**
+ * 接收方列表（V2）：每人一行。一对一（快照为空）时不渲染 ——
+ * 一对一的界面与 V1 完全一致。
+ *
+ * @param snapshots [{ peerId, state, progress, error }]
+ */
+export function renderReceiverList(snapshots) {
+    const list = $('receiverList');
+    list.textContent = '';
+
+    if (snapshots.length === 0) {
+        show('receiverList', false);
+        return;
+    }
+
+    for (const snapshot of snapshots) {
+        const row = document.createElement('div');
+        row.className = 'file-item';
+
+        const name = document.createElement('span');
+        name.className = 'file-name';
+
+        const detail = document.createElement('span');
+        detail.className = 'file-size';
+
+        if (snapshot.state === 'completed') {
+            name.textContent = `接收方 ${snapshot.peerId} — 已收齐并通过校验`;
+            detail.textContent = '';
+        } else if (snapshot.state === 'failed') {
+            name.textContent = `接收方 ${snapshot.peerId} — 失败`;
+            detail.textContent = snapshot.error?.message ?? '';
+        } else if (snapshot.progress !== null) {
+            const percent = snapshot.progress.totalBytes > 0
+                ? (snapshot.progress.completedBytes / snapshot.progress.totalBytes) * 100
+                : 0;
+            name.textContent = `接收方 ${snapshot.peerId}`;
+            detail.textContent =
+                `${percent.toFixed(1)}%  ` +
+                `${formatSize(snapshot.progress.completedBytes)} / ` +
+                formatSize(snapshot.progress.totalBytes);
+        } else {
+            name.textContent = `接收方 ${snapshot.peerId} — 正在建立连接…`;
+            detail.textContent = '';
+        }
+
+        row.append(name, detail);
+        list.append(row);
+    }
+
+    show('receiverList', true);
 }
 
 export function setSendStatus(text) {

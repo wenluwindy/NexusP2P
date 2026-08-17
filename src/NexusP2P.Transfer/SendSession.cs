@@ -30,14 +30,29 @@ public readonly record struct TransferProgress(
 public sealed class SendSession
 {
     private readonly TransferManifest _manifest;
-    private readonly IPieceSource _source;
+    private readonly IPieceSource? _source;
+    private readonly ICipherPieceProvider? _cipherProvider;
     private readonly TransferSecret _secret;
     private readonly PieceLocator _locator;
 
+    /// <summary>V1 入口：自己「读盘 → 加密」，缓冲区池化，行为与既往完全一致。</summary>
     public SendSession(TransferManifest manifest, IPieceSource source, TransferSecret secret)
     {
         _manifest = manifest ?? throw new ArgumentNullException(nameof(manifest));
         _source = source ?? throw new ArgumentNullException(nameof(source));
+        _secret = secret;
+        _locator = new PieceLocator(manifest);
+    }
+
+    /// <summary>
+    /// V2 入口（AD-13）：密文来自共享的 <see cref="ICipherPieceProvider"/>
+    /// （通常是 <see cref="CipherPieceCache"/>），多条链路加密一次发 N 次。
+    /// nonce 由位置派生、密钥对整次传输唯一，所以密文与 V1 路径逐字节相同。
+    /// </summary>
+    public SendSession(TransferManifest manifest, TransferSecret secret, ICipherPieceProvider cipherProvider)
+    {
+        _manifest = manifest ?? throw new ArgumentNullException(nameof(manifest));
+        _cipherProvider = cipherProvider ?? throw new ArgumentNullException(nameof(cipherProvider));
         _secret = secret;
         _locator = new PieceLocator(manifest);
     }
@@ -107,10 +122,14 @@ public sealed class SendSession
 
         // 2~3. 轮次循环：收位图 → 推送它缺的 → 宣告本轮结束 → 再收位图。
         // 每轮结束后接收方会重发位图，所以被拒收的分片下一轮会被重传。
-        using var cipher = new PieceCipher(_secret, _manifest.Hash);
-        var plaintextBuffer = ArrayPool<byte>.Shared.Rent(_manifest.Parameters.PieceSize);
-        var ciphertextBuffer = ArrayPool<byte>.Shared.Rent(
-            PieceCipher.GetCiphertextLength(_manifest.Parameters.PieceSize));
+        // V1 路径自己「读盘 → 加密」；V2 路径（AD-13）密文来自共享提供者。
+        using var cipher = _source is not null ? new PieceCipher(_secret, _manifest.Hash) : null;
+        var plaintextBuffer = _source is not null
+            ? ArrayPool<byte>.Shared.Rent(_manifest.Parameters.PieceSize)
+            : null;
+        var ciphertextBuffer = _source is not null
+            ? ArrayPool<byte>.Shared.Rent(PieceCipher.GetCiphertextLength(_manifest.Parameters.PieceSize))
+            : null;
 
         try
         {
@@ -161,17 +180,24 @@ public sealed class SendSession
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(plaintextBuffer);
-            ArrayPool<byte>.Shared.Return(ciphertextBuffer);
+            if (plaintextBuffer is not null)
+            {
+                ArrayPool<byte>.Shared.Return(plaintextBuffer);
+            }
+
+            if (ciphertextBuffer is not null)
+            {
+                ArrayPool<byte>.Shared.Return(ciphertextBuffer);
+            }
         }
     }
 
     private async Task PushMissingAsync(
         ProtocolConnection connection,
-        PieceCipher cipher,
+        PieceCipher? cipher,
         PieceBitfield remoteBitfield,
-        byte[] plaintextBuffer,
-        byte[] ciphertextBuffer,
+        byte[]? plaintextBuffer,
+        byte[]? ciphertextBuffer,
         IProgress<TransferProgress>? progress,
         CancellationToken cancellationToken)
     {
@@ -190,30 +216,42 @@ public sealed class SendSession
 
             var location = _locator.Locate(globalIndex);
 
-            var read = await _source
-                .ReadPieceAsync(location.FileIndex, location.LocalPieceIndex,
-                    plaintextBuffer.AsMemory(0, location.Length), cancellationToken)
-                .ConfigureAwait(false);
-
-            if (read != location.Length)
+            ReadOnlyMemory<byte> ciphertext;
+            if (_cipherProvider is not null)
             {
-                throw new TransferFailedException(
-                    TransferErrorCode.Unknown,
-                    $"读取本地文件时第 {globalIndex} 个分片只读到 {read} 字节，期望 {location.Length} 字节。" +
-                    "文件可能在传输期间被改动了。");
+                // V2（AD-13）：密文来自共享提供者，加密一次发 N 次
+                ciphertext = await _cipherProvider.GetCiphertextAsync(location, cancellationToken)
+                    .ConfigureAwait(false);
             }
+            else
+            {
+                var read = await _source!
+                    .ReadPieceAsync(location.FileIndex, location.LocalPieceIndex,
+                        plaintextBuffer!.AsMemory(0, location.Length), cancellationToken)
+                    .ConfigureAwait(false);
 
-            var ciphertextLength = PieceCipher.GetCiphertextLength(location.Length);
-            cipher.Encrypt(
-                location.FileIndex,
-                location.LocalPieceIndex,
-                plaintextBuffer.AsSpan(0, location.Length),
-                ciphertextBuffer.AsSpan(0, ciphertextLength));
+                if (read != location.Length)
+                {
+                    throw new TransferFailedException(
+                        TransferErrorCode.Unknown,
+                        $"读取本地文件时第 {globalIndex} 个分片只读到 {read} 字节，期望 {location.Length} 字节。" +
+                        "文件可能在传输期间被改动了。");
+                }
+
+                var ciphertextLength = PieceCipher.GetCiphertextLength(location.Length);
+                cipher!.Encrypt(
+                    location.FileIndex,
+                    location.LocalPieceIndex,
+                    plaintextBuffer.AsSpan(0, location.Length),
+                    ciphertextBuffer!.AsSpan(0, ciphertextLength));
+
+                ciphertext = ciphertextBuffer.AsMemory(0, ciphertextLength);
+            }
 
             var payload = new PiecePayload(
                 location.FileIndex,
                 location.LocalPieceIndex,
-                ciphertextBuffer.AsMemory(0, ciphertextLength)).Serialize();
+                ciphertext).Serialize();
 
             await connection.SendAsync(MessageType.Piece, payload, cancellationToken)
                 .ConfigureAwait(false);

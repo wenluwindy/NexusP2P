@@ -9,6 +9,7 @@ import { generateSecret } from './core/crypto.js';
 import { TransferManifest } from './core/manifest.js';
 import { TransferErrorCode } from './core/messages.js';
 import { answer, offer } from './net/connector.js';
+import { FanOutLinkState, offerMany } from './net/fanout-connector.js';
 import { describeCandidateKind } from './net/peer.js';
 import { ProtocolConnection } from './transfer/connection.js';
 import { collectDroppedFiles } from './transfer/manifest-builder.js';
@@ -136,6 +137,13 @@ async function startSending() {
         return;
     }
 
+    // 一对多（V2）走独立流程；1 人时下面的一对一路径与 V1 一字不差
+    const maxPeers = ui.readMaxPeers();
+    if (maxPeers > 1) {
+        await startSendingMany(maxPeers);
+        return;
+    }
+
     state.secret = generateSecret();
     state.abort = new AbortController();
 
@@ -205,6 +213,98 @@ async function startSending() {
 /** 用户主动点了取消，而不是真的出错 —— 界面上要分开对待。 */
 function isCancellation(error) {
     return error.name === 'AbortError' || error.code === TransferErrorCode.Cancelled;
+}
+
+/**
+ * 一对多发送（V2）。清单在 Worker 里已经算好（state.manifest），
+ * 这里绝不重算 —— 每个接收方进来只是多开一条链路。
+ *
+ * 没有「自动结束」：发送方不知道还会不会有人来，守到用户点取消为止。
+ * 点取消 = 停止接纳新接收方并取消在传链路，然后按各链路结果收尾。
+ */
+async function startSendingMany(maxPeers) {
+    state.secret = generateSecret();
+    state.abort = new AbortController();
+
+    const tracker = new RateTracker();
+    const snapshots = new Map();   // peerId → 最新快照
+
+    ui.setSendPhase('waiting');
+
+    const refresh = () => {
+        const list = [...snapshots.values()]
+            .sort((a, b) => a.peerId < b.peerId ? -1 : a.peerId > b.peerId ? 1 : 0);
+        ui.renderReceiverList(list);
+
+        // 整体进度 = 各链路已传字节之和 / 字节数×人数
+        const total = state.manifest.totalLength * Math.max(1, list.length);
+        const done = list.reduce((sum, s) => sum + (s.progress?.completedBytes ?? 0), 0);
+        tracker.record(done);
+        const speed = tracker.bytesPerSecond();
+        const active = list.filter(s => s.state === FanOutLinkState.Running).length;
+
+        ui.setSendStatus(list.length === 0
+            ? '等待对方接收…'
+            : `正在传输（${active} 人接收中，整体 ${(total > 0 ? done / total * 100 : 0).toFixed(0)}%）`);
+        ui.updateSendProgress({
+            completedBytes: done,
+            totalBytes: total,
+            speed,
+            remaining: estimateRemaining(done, total, speed),
+            bottleneck: '',
+        });
+    };
+
+    try {
+        const links = await offerMany(
+            signalingOrigin(), state.manifest, state.files, state.secret, maxPeers, {
+                onRoomCreated: room => {
+                    state.link = room;
+                    ui.showShareCode(room, state.secret);
+
+                    // 旧服务器不认识 maxReceivers（回显 1）：降级为一对一提醒用户
+                    if (room.maxReceivers < maxPeers) {
+                        ui.notify(
+                            `信令服务器只支持 ${room.maxReceivers} 人接收，已按 ` +
+                            `${room.maxReceivers} 人继续。`, 'info');
+                    }
+                },
+                onLinkUpdate: snapshot => {
+                    snapshots.set(snapshot.peerId, snapshot);
+                    ui.setSendPhase('transferring');
+                    refresh();
+                },
+                signal: state.abort.signal,
+            });
+
+        const all = [...links.values()];
+        const completed = all.filter(s => s.state === FanOutLinkState.Completed).length;
+
+        if (all.length > 0 && completed === all.length) {
+            ui.setSendPhase('done');
+            ui.notify(`传输完成，${completed} 个接收方都已确认收齐并通过校验。`, 'success');
+        } else if (all.length === 0 || state.abort.signal.aborted) {
+            ui.setSendPhase('idle');
+            ui.notify(completed > 0
+                ? `已停止。${completed}/${all.length} 个接收方收齐。`
+                : '已取消。', 'info');
+        } else {
+            ui.setSendPhase('failed');
+            ui.setSendStatus(`发送结束：${completed}/${all.length} 个接收方收齐。`);
+            ui.notify(`有接收方没有收完（${completed}/${all.length} 收齐）。`, 'error');
+        }
+    } catch (error) {
+        if (isCancellation(error)) {
+            ui.setSendPhase('idle');
+            ui.notify('已取消。', 'info');
+        } else {
+            ui.setSendPhase('failed');
+            ui.setSendStatus(`发送失败：${error.message}`);
+            ui.notify(`发送失败：${error.message}`, 'error');
+        }
+    } finally {
+        state.abort = null;
+    }
 }
 
 // ---------------- 接收 ----------------

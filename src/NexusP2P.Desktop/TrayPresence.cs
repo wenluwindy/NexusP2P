@@ -120,6 +120,12 @@ internal sealed class TrayPresence : IDisposable
             TransferPhase.Preparing => "NexusP2P — 正在计算校验和",
             TransferPhase.WaitingForPeer => "NexusP2P — 等待对方接收",
             TransferPhase.Connecting => "NexusP2P — 正在连接",
+
+            // 一对多（V2）：把「几个人在收」说出来
+            TransferPhase.Transferring when snapshot.Receivers.Count > 0 =>
+                $"NexusP2P — {snapshot.Receivers.Count(r => !r.Completed && r.Error is null)} 人接收中，" +
+                $"整体 {snapshot.Fraction * 100:N0}%",
+
             TransferPhase.Transferring =>
                 $"NexusP2P — {snapshot.Fraction * 100:N0}%，" +
                 $"{MainWindow.FormatSize((long)snapshot.BytesPerSecond)}/s",

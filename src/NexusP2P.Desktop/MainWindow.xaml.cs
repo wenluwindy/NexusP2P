@@ -4,6 +4,7 @@ using System.IO;
 using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.Win32;
 using NexusP2P.Agent;
@@ -159,7 +160,7 @@ public partial class MainWindow : Window, IDisposable
     }
 
     private void OnDragLeave(object sender, DragEventArgs e) =>
-        DropZone.BorderBrush = (Brush)FindResource("Border");
+        DropZone.BorderBrush = (Brush)FindResource("BorderStrong");
 
     private void SelectPath(string path)
     {
@@ -193,8 +194,29 @@ public partial class MainWindow : Window, IDisposable
 
         // 刻意不 await：界面要立刻回到可响应状态，进度靠 SnapshotChanged 推。
         // 异常已经在 TransferManager 里被翻译成快照上的 Error 字段。
-        _ = _manager.StartSendAsync(_selectedPath);
+        _ = _manager.StartSendManyAsync(_selectedPath, ReadMaxPeers());
     }
+
+    /// <summary>
+    /// 读「允许接收人数」。默认 1 = 一对一（V1 行为）。
+    ///
+    /// <para>只保证下界（至少 1 个人）—— 上界不在这里定：信令服务器会把请求
+    /// 夹到它自己配置的席位上限，并在建房应答里回显生效值。</para>
+    /// </summary>
+    private int ReadMaxPeers()
+    {
+        if (!int.TryParse(MaxPeersInput.Text.Trim(), out var value) || value < 1)
+        {
+            MaxPeersInput.Text = "1";
+            return 1;
+        }
+
+        return value;
+    }
+
+    /// <summary>接收人数框只收数字。粘贴进来的非数字由 ReadMaxPeers 兜底。</summary>
+    private void OnMaxPeersTextInput(object sender, TextCompositionEventArgs e) =>
+        e.Handled = !e.Text.All(char.IsAsciiDigit);
 
     private void OnCopyCode(object sender, RoutedEventArgs e) => CopyToClipboard(CodeText.Text, "文件码");
 
@@ -482,9 +504,30 @@ public partial class MainWindow : Window, IDisposable
             ShareUrlText.Text = url;
         }
 
+        RenderReceivers(snapshot);
+
         var busy = IsBusyPhase(snapshot.Phase);
         SendCancelButton.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
         SendButton.IsEnabled = !busy && _selectedPath is not null;
+    }
+
+    /// <summary>
+    /// 接收方列表（V2）。一人接收（Receivers 为空）时保持折叠 ——
+    /// 一对一的界面与 V1 视觉等价，不为多路把单路搞复杂。
+    /// </summary>
+    private void RenderReceivers(TransferSnapshot snapshot)
+    {
+        if (snapshot.Receivers.Count == 0)
+        {
+            ReceiverList.Visibility = Visibility.Collapsed;
+            ReceiverList.ItemsSource = null;
+            return;
+        }
+
+        ReceiverList.Visibility = Visibility.Visible;
+        ReceiverList.ItemsSource = snapshot.Receivers
+            .Select(r => new ReceiverRow(r))
+            .ToArray();
     }
 
     private void RenderReceive(TransferSnapshot snapshot)
@@ -516,6 +559,10 @@ public partial class MainWindow : Window, IDisposable
     private static string DescribePhase(TransferSnapshot snapshot) => snapshot.Phase switch
     {
         TransferPhase.Preparing => "正在计算校验和…",
+
+        TransferPhase.WaitingForPeer when snapshot.MaxReceivers > 1 =>
+            $"等待接收（最多 {snapshot.MaxReceivers} 人）…",
+
         TransferPhase.WaitingForPeer => "等待对方接收…",
 
         // 重连中要显示第几次 —— 悄悄重试只会让「网络确实不通」这件事
@@ -524,6 +571,11 @@ public partial class MainWindow : Window, IDisposable
             $"连接断开，正在重连（第 {snapshot.ReconnectAttempt}/{snapshot.ReconnectMaxAttempts} 次）…",
 
         TransferPhase.Connecting => "正在建立连接…",
+
+        TransferPhase.Transferring when snapshot.Receivers.Count > 0 =>
+            $"正在传输（{snapshot.Receivers.Count(r => !r.Completed && r.Error is null)} 人接收中，" +
+            $"整体 {snapshot.Fraction * 100:N0}%）",
+
         TransferPhase.Transferring => "正在传输",
         TransferPhase.Verifying => "正在校验已有进度…",
         TransferPhase.Completed => "完成",
@@ -637,14 +689,21 @@ public partial class MainWindow : Window, IDisposable
         Shutdown();
     }
 
-    private bool ConfirmQuitWhileBusy() =>
-        MessageBox.Show(
+    private bool ConfirmQuitWhileBusy()
+    {
+        // 一对多时把「还有几个人在收」说清楚 —— 中断影响的不止一个人
+        var receiving = _manager.Snapshot.Receivers.Count(r => !r.Completed && r.Error is null);
+        var headline = receiving > 1
+            ? $"还有 {receiving} 人正在接收。现在退出会同时中断他们。"
+            : "还有传输正在进行。现在退出会中断它。";
+
+        return MessageBox.Show(
             this,
-            "还有传输正在进行。现在退出会中断它。\n\n" +
-            "已收到的部分会保留在磁盘上，之后用同一个文件码可以接着传。",
+            headline + "\n\n已收到的部分会保留在磁盘上，之后用同一个文件码可以接着传。",
             "确认退出",
             MessageBoxButton.OKCancel,
             MessageBoxImage.Warning) == MessageBoxResult.OK;
+    }
 
     /// <summary>托盘菜单的「退出」走这里。</summary>
     internal void RequestQuit()
@@ -732,4 +791,35 @@ public partial class MainWindow : Window, IDisposable
             ShowWarning($"剪贴板暂时不可用，请手动选中{what}复制。");
         }
     }
+}
+
+/// <summary>
+/// 接收方列表里的一行（V2）。把 <see cref="ReceiverView"/> 翻译成
+/// 界面直接绑定的字符串 —— 模板里不放逻辑。
+/// </summary>
+internal sealed record ReceiverRow(ReceiverView View)
+{
+    public string Title => View switch
+    {
+        { Completed: true } => $"接收方 {View.PeerId} — 已收齐并通过校验",
+        { Error: not null } => $"接收方 {View.PeerId} — 失败",
+        _ => $"接收方 {View.PeerId}",
+    };
+
+    public string Detail => View switch
+    {
+        { Completed: true } => MainWindow.FormatSize(View.TotalBytes),
+        { Error: not null } => View.Error!,
+        _ => $"{View.Fraction * 100:N1}%  {MainWindow.FormatSize(View.CompletedBytes)}" +
+             $" / {MainWindow.FormatSize(View.TotalBytes)}" +
+             $"  {MainWindow.FormatSize((long)View.BytesPerSecond)}/s" +
+             View.Bottleneck switch
+             {
+                 Bottleneck.Relay => "（中继）",
+                 Bottleneck.DirectLink => "（直连）",
+                 _ => string.Empty,
+             },
+    };
+
+    public double Fraction => View.Fraction;
 }

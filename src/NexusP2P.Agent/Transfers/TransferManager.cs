@@ -239,6 +239,111 @@ public sealed class TransferManager : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// 一对多发送（V2，AD-15）。<paramref name="maxReceivers"/> 为 1 时
+    /// 直接走 <see cref="StartSendAsync"/> —— 一对一的行为一个字都不变。
+    ///
+    /// <para>返回的 Task 在房间关闭（用户取消）或出错时完成。
+    /// 一对多没有「自动结束」：发送方不知道还会不会有人来，
+    /// 守到用户主动停止（<see cref="Cancel"/>）为止。</para>
+    /// </summary>
+    public async Task StartSendManyAsync(string path, int maxReceivers)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxReceivers, 1);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (maxReceivers == 1)
+        {
+            await StartSendAsync(path).ConfigureAwait(false);
+            return;
+        }
+
+        var cancellation = BeginOperation(isSending: true);
+
+        try
+        {
+            Update(s => s with { Phase = TransferPhase.Preparing, Bottleneck = Bottleneck.Hashing });
+
+            var manifest = await ManifestBuilder
+                .BuildAsync(
+                    path,
+                    progress: new Progress<long>(hashed =>
+                        Update(s => s with { CompletedBytes = hashed })),
+                    cancellationToken: cancellation.Token)
+                .ConfigureAwait(false);
+
+            var secret = TransferSecret.Generate();
+            var root = ResolveSourceRoot(path);
+
+            Update(s => s with
+            {
+                Phase = TransferPhase.WaitingForPeer,
+                CompletedBytes = 0,
+                TotalBytes = manifest.TotalLength,
+                Bottleneck = Bottleneck.Unknown,
+                MaxReceivers = maxReceivers,
+            });
+
+            await using var source = new FilePieceSource(manifest, root);
+            using var cache = new CipherPieceCache(manifest, source, secret);
+            await using var fanOut = new FanOutSender(_options, manifest, secret, cache);
+
+            var board = new ReceiverBoard(manifest.TotalLength);
+            fanOut.PeerStatusChanged += status =>
+                Update(s => board.Apply(s, status));
+
+            try
+            {
+                await fanOut.RunAsync(
+                    maxReceivers,
+                    onRoomCreated: room => Update(s => s with
+                    {
+                        Code = TransferCode.Parse(room.Code).ToString(),
+                        ShareUrl = string.IsNullOrEmpty(room.ShareUrlBase)
+                            ? null
+                            : $"{room.ShareUrlBase}/{room.Code}#{secret.ToBase64Url()}",
+                        MaxReceivers = room.MaxReceivers,
+                    }),
+                    until: null,
+                    cancellationToken: cancellation.Token)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // 用户点了停止：不再接纳新人，等已开的链路自然结束
+            }
+
+            await fanOut.WhenAllLinksSettledAsync().ConfigureAwait(false);
+
+            Update(s =>
+            {
+                var completed = s.Receivers.Count(r => r.Completed);
+                return s with
+                {
+                    Phase = completed == s.Receivers.Count && completed > 0
+                        ? TransferPhase.Completed
+                        : s.Receivers.Count == 0 ? TransferPhase.Cancelled : TransferPhase.Failed,
+                    Error = completed == s.Receivers.Count || s.Receivers.Count == 0
+                        ? null
+                        : $"{s.Receivers.Count - completed} 个接收方没有收完。",
+                };
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            Update(s => s with { Phase = TransferPhase.Cancelled, Error = null });
+        }
+        catch (Exception ex)
+        {
+            Update(s => s with { Phase = TransferPhase.Failed, Error = Explain(ex) });
+        }
+        finally
+        {
+            EndOperation(cancellation);
+        }
+    }
+
     /// <summary>取消当前传输。已收到的部分保留在磁盘上，之后可以续传。</summary>
     public void Cancel()
     {
@@ -429,4 +534,68 @@ public sealed class TransferManager : IAsyncDisposable
 internal sealed class ReconnectReporter(TransferManager manager) : IProgress<ReconnectStatus>
 {
     public void Report(ReconnectStatus value) => manager.ReportReconnect(value);
+}
+
+/// <summary>
+/// 把逐链路的 <see cref="FanOutPeerStatus"/> 累积成快照上的接收方列表，
+/// 并维护整体进度（各链路已传字节之和 / 字节数×人数）。
+///
+/// <para>速率是逐链路算的 —— 把所有链路的字节混进一个 RateTracker
+/// 会把「3 个人各 2 MB/s」显示成「6 MB/s」，对单个接收方的观感是错的。
+/// 整体那行显示的是各链路速率之和，语义是「本机上行的实际消耗」。</para>
+/// </summary>
+public sealed class ReceiverBoard(long totalBytesPerReceiver)
+{
+    private readonly Lock _gate = new();
+    private readonly Dictionary<string, ReceiverView> _views = [];
+    private readonly Dictionary<string, RateTracker> _rates = [];
+
+    public TransferSnapshot Apply(TransferSnapshot snapshot, FanOutPeerStatus status)
+    {
+        lock (_gate)
+        {
+            if (!_rates.TryGetValue(status.PeerId, out var rate))
+            {
+                rate = new RateTracker();
+                _rates[status.PeerId] = rate;
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            rate.Record(status.Progress.CompletedBytes, now);
+
+            var total = status.Progress.TotalBytes > 0 ? status.Progress.TotalBytes : totalBytesPerReceiver;
+
+            _views[status.PeerId] = new ReceiverView
+            {
+                PeerId = status.PeerId,
+                Completed = status.State == Transfer.FanOutLinkState.Completed,
+                CompletedBytes = status.State == Transfer.FanOutLinkState.Completed
+                    ? total
+                    : status.Progress.CompletedBytes,
+                TotalBytes = total,
+                BytesPerSecond = status.State == Transfer.FanOutLinkState.Running
+                    ? rate.BytesPerSecond(now)
+                    : 0,
+                Bottleneck = status.CandidateKind is { } kind
+                    ? TransferSnapshot.FromCandidatePair(kind)
+                    : Bottleneck.Unknown,
+                Error = status.State == Transfer.FanOutLinkState.Failed
+                    ? status.Error?.Message
+                    : null,
+            };
+
+            // 按 peerId 排序保证列表稳定 —— 字典顺序会让行在界面上跳来跳去
+            var receivers = _views.Values.OrderBy(v => v.PeerId, StringComparer.Ordinal).ToArray();
+
+            return snapshot with
+            {
+                Phase = TransferPhase.Transferring,
+                Receivers = receivers,
+                CompletedBytes = receivers.Sum(v => v.CompletedBytes),
+                TotalBytes = totalBytesPerReceiver * Math.Max(1, receivers.Length),
+                BytesPerSecond = receivers.Sum(v => v.BytesPerSecond),
+                Bottleneck = snapshot.Bottleneck,
+            };
+        }
+    }
 }

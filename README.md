@@ -94,6 +94,9 @@ dotnet run --project src/NexusP2P.Cli -- receive 123456789 --key "密钥" --dest
 dotnet restore NexusP2P.sln
 dotnet build NexusP2P.sln --configuration Release
 dotnet test NexusP2P.sln --configuration Release
+
+./packaging/package.sh win
+./packaging/package-dll.sh
 ```
 
 网页端测试：

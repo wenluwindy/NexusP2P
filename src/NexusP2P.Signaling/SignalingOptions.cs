@@ -36,6 +36,19 @@ public sealed class SignalingOptions
     public int MaxRooms { get; set; } = 1000;
 
     /// <summary>
+    /// 单个房间的接收方席位上限（V2，AD-15）。建房请求的 <c>maxReceivers</c>
+    /// 会被夹到 [1, 此值]。
+    ///
+    /// <para><b>默认不限制</b>（<see cref="int.MaxValue"/>）：席位数由发送方按
+    /// 自己的上行带宽与内存自行决定。真正的约束是物理的 —— 每条链路一个
+    /// PeerConnection，N 条链路平分同一条上行 —— 而不是这里的一个数字。</para>
+    ///
+    /// <para>公开部署想给房间设个天花板时，把它配成具体数值即可；
+    /// 超出的建房请求会被夹到该值（客户端从 <c>created</c> 的回显里得知）。</para>
+    /// </summary>
+    public int MaxReceiversPerRoom { get; set; } = int.MaxValue;
+
+    /// <summary>
     /// 是否跑在反向代理（nginx / Caddy / IIS）后面。
     ///
     /// <para><b>放在代理后面必须打开它，否则入房限速会失效。</b>
@@ -119,6 +132,11 @@ public sealed class SignalingOptionsValidator : IValidateOptions<SignalingOption
         if (options.MaxRooms < 1)
         {
             failures.Add("MaxRooms 至少为 1。");
+        }
+
+        if (options.MaxReceiversPerRoom < 1)
+        {
+            failures.Add("MaxReceiversPerRoom 至少为 1。");
         }
 
         if (options.Turn.Urls.Length > 0 && string.IsNullOrWhiteSpace(options.Turn.Secret))

@@ -460,6 +460,48 @@ public sealed class CrossProcessTests : IAsyncLifetime, IDisposable
         }
     }
 
+    /// <summary>
+    /// <b>Task 10.1 的核心验收</b>：CLI 一对多。一个发送进程 `--max-peers 2`，
+    /// 两个接收进程用同一个分享链接先后进房，各自收齐。
+    /// </summary>
+    [Fact]
+    public async Task 一个发送进程同时传给两个接收进程()
+    {
+        var sourceDirectory = CreateTemporaryDirectory();
+        var destinationA = CreateTemporaryDirectory();
+        var destinationB = CreateTemporaryDirectory();
+        var sourceFile = Path.Combine(sourceDirectory, "shared.bin");
+        var expected = WriteRandomFile(sourceFile, 3 * 1024 * 1024);
+
+        var sender = StartCli("send", sourceFile, "--max-peers", "2", "--exit-after", "2");
+
+        try
+        {
+            var shareUrl = await WaitForPatternAsync(
+                sender, @"分享链接：(\S+)", TimeSpan.FromSeconds(120));
+
+            var receiverA = StartCli("receive", shareUrl, "--dest", destinationA);
+            var receiverB = StartCli("receive", shareUrl, "--dest", destinationB);
+
+            var exitA = await WaitForExitAsync(receiverA, TimeSpan.FromSeconds(120), sender);
+            var exitB = await WaitForExitAsync(receiverB, TimeSpan.FromSeconds(120), sender);
+            Assert.True(exitA == 0, Report(exitA, sender, receiverA));
+            Assert.True(exitB == 0, Report(exitB, sender, receiverB));
+
+            var senderExit = await WaitForExitAsync(sender, TimeSpan.FromSeconds(60));
+            Assert.True(senderExit == 0, Report(senderExit, sender, receiverA));
+
+            Assert.Contains("2/2 个接收方确认收齐", sender.Text, StringComparison.Ordinal);
+
+            Assert.Equal(expected, await File.ReadAllBytesAsync(Path.Combine(destinationA, "shared.bin")));
+            Assert.Equal(expected, await File.ReadAllBytesAsync(Path.Combine(destinationB, "shared.bin")));
+        }
+        finally
+        {
+            KillIfRunning(sender);
+        }
+    }
+
     private static void KillIfRunning(ProcessRun run)
     {
         try

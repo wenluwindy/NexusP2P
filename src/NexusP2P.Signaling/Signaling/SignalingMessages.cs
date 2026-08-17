@@ -46,18 +46,70 @@ public sealed record ServerMessage
     [JsonPropertyName("peerPresent")]
     public bool? PeerPresent { get; init; }
 
-    public static ServerMessage Created(string code, string shareUrlBase, IReadOnlyList<IceServer> iceServers) =>
-        new() { Type = "created", Code = code, ShareUrlBase = shareUrlBase, IceServers = iceServers };
+    /// <summary>
+    /// 相关接收方的 peerId（AD-12）：<c>joined</c> 里是自己的；
+    /// <c>peer-joined</c> / <c>peer-left</c> / 发给发送方的 <c>signal</c> 里
+    /// 是那个接收方的。发送方没有 peerId。
+    /// </summary>
+    [JsonPropertyName("peerId")]
+    public string? PeerId { get; init; }
 
-    public static ServerMessage Joined(IReadOnlyList<IceServer> iceServers, bool peerPresent) =>
-        new() { Type = "joined", IceServers = iceServers, PeerPresent = peerPresent };
+    /// <summary>转发的信令来自哪个接收方。只出现在发给发送方的 <c>signal</c> 里。</summary>
+    [JsonPropertyName("from")]
+    public string? From { get; init; }
 
-    public static ServerMessage PeerJoined() => new() { Type = "peer-joined" };
+    /// <summary>建房时生效的接收方席位数（AD-15，回显给客户端）。</summary>
+    [JsonPropertyName("maxReceivers")]
+    public int? MaxReceivers { get; init; }
 
-    public static ServerMessage PeerLeft() => new() { Type = "peer-left" };
+    /// <summary>
+    /// 发送方进房（重连）那一刻已在房的接收方 peerId 列表（AD-12）。
+    /// 只发给发送方 —— 接收方之间互不可见。
+    /// </summary>
+    [JsonPropertyName("peers")]
+    public IReadOnlyList<string>? Peers { get; init; }
 
+    public static ServerMessage Created(
+        string code, string shareUrlBase, IReadOnlyList<IceServer> iceServers, int maxReceivers) =>
+        new()
+        {
+            Type = "created",
+            Code = code,
+            ShareUrlBase = shareUrlBase,
+            IceServers = iceServers,
+            MaxReceivers = maxReceivers,
+        };
+
+    /// <summary>接收方的进房应答：带自己的 peerId。</summary>
+    public static ServerMessage ReceiverJoined(
+        IReadOnlyList<IceServer> iceServers, bool peerPresent, string peerId) =>
+        new() { Type = "joined", IceServers = iceServers, PeerPresent = peerPresent, PeerId = peerId };
+
+    /// <summary>发送方重连的进房应答：带当前在房的接收方列表。</summary>
+    public static ServerMessage SenderJoined(
+        IReadOnlyList<IceServer> iceServers, IReadOnlyList<string> peers) =>
+        new()
+        {
+            Type = "joined",
+            IceServers = iceServers,
+            PeerPresent = peers.Count > 0,
+            Peers = peers,
+        };
+
+    public static ServerMessage PeerJoined(string peerId) => new() { Type = "peer-joined", PeerId = peerId };
+
+    public static ServerMessage PeerLeft(string peerId) => new() { Type = "peer-left", PeerId = peerId };
+
+    /// <summary>发送方离开时发给每个接收方。接收方的对端只有发送方，不需要 peerId。</summary>
+    public static ServerMessage SenderLeft() => new() { Type = "peer-left" };
+
+    /// <summary>转发给接收方的信令（来源必然是发送方，不需要 from）。</summary>
     public static ServerMessage Signal(JsonElement payload) =>
         new() { Type = "signal", Payload = payload };
+
+    /// <summary>转发给发送方的信令：带来源接收方的 peerId。</summary>
+    public static ServerMessage SignalFrom(JsonElement payload, string from) =>
+        new() { Type = "signal", Payload = payload, From = from };
 
     public static ServerMessage Error(string message) => new() { Type = "error", Message = message };
 }
@@ -83,4 +135,13 @@ public sealed record ClientMessage
 
     [JsonPropertyName("payload")]
     public JsonElement? Payload { get; init; }
+
+    /// <summary>
+    /// 目标接收方的 peerId。<b>发送方</b>在多接收方房间里必须带；
+    /// 接收方带了也被忽略（只能发给发送方）。指向不存在的 peerId 时
+    /// 静默丢弃 —— 接收方刚断线时发送方手里有过期的 peerId，
+    /// 这是正常时序而不是协议违规（AD-12）。
+    /// </summary>
+    [JsonPropertyName("to")]
+    public string? To { get; init; }
 }

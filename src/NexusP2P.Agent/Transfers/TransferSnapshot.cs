@@ -57,6 +57,36 @@ public enum Bottleneck
     Reconnecting,
 }
 
+/// <summary>
+/// 一对多发送时单个接收方的状态（V2）。
+///
+/// <para>发送方视角没有「重连中」：星型拓扑里重连由接收方发起，
+/// 断开的接收方回来时拿的是新 peerId（AD-16）。所以断开的链路在这里
+/// 只有 Failed 一种归宿 —— 房间还开着，「等对方重连」是房间级别的事实，
+/// 由 UI 依据 <see cref="TransferSnapshot.MaxReceivers"/> 与空位数陈述。</para>
+/// </summary>
+public sealed record ReceiverView
+{
+    public required string PeerId { get; init; }
+
+    /// <summary>true = 已收齐并通过校验；false + Error = 失败；否则在传。</summary>
+    public bool Completed { get; init; }
+
+    public long CompletedBytes { get; init; }
+
+    public long TotalBytes { get; init; }
+
+    /// <summary>这条链路最近的速率（字节/秒）。</summary>
+    public double BytesPerSecond { get; init; }
+
+    public Bottleneck Bottleneck { get; init; }
+
+    /// <summary>失败原因（面向用户）。null 表示没失败。</summary>
+    public string? Error { get; init; }
+
+    public double Fraction => TotalBytes == 0 ? 0 : Math.Min(1.0, (double)CompletedBytes / TotalBytes);
+}
+
 /// <summary>传输状态的一次快照。UI 轮询它来刷新界面。</summary>
 public sealed record TransferSnapshot
 {
@@ -91,6 +121,15 @@ public sealed record TransferSnapshot
 
     /// <summary>落地的文件路径。完成后才有。</summary>
     public IReadOnlyList<string> LandedFiles { get; init; } = [];
+
+    /// <summary>一对多发送的席位数。1 = 一对一（V1 行为）。</summary>
+    public int MaxReceivers { get; init; } = 1;
+
+    /// <summary>
+    /// 一对多发送时每个接收方一条（V2）。一对一时为空 ——
+    /// 单接收方的进度仍走顶层字段，界面与 V1 完全一致。
+    /// </summary>
+    public IReadOnlyList<ReceiverView> Receivers { get; init; } = [];
 
     public double Fraction => TotalBytes == 0 ? 0 : Math.Min(1.0, (double)CompletedBytes / TotalBytes);
 

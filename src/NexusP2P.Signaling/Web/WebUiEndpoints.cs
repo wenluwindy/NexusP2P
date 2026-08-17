@@ -68,10 +68,19 @@ public static class WebUiEndpoints
             return;
         }
 
-        // 每次请求重新取 FileInfo：进程运行期间前端文件可能被替换
-        IResult ServeIndex() => Results.File(
-            files.GetFileInfo("index.html").PhysicalPath!,
-            contentType: "text/html; charset=utf-8");
+        // 每次请求重新取 FileInfo：进程运行期间前端文件可能被替换。
+        //
+        // 这里必须自己加不缓存的头：这两条路由走 Results.File，
+        // 不经过 UseStaticFiles 的 OnPrepareResponse。首页被缓存住、
+        // 而 .js 每次都重新取，会得到「新 HTML 配旧脚本」或反过来的错配 ——
+        // 症状是某个按钮点了完全没反应（脚本在找一个已经改名的元素）。
+        IResult ServeIndex(HttpContext context)
+        {
+            context.Response.Headers.CacheControl = "no-cache, must-revalidate";
+            return Results.File(
+                files.GetFileInfo("index.html").PhysicalPath!,
+                contentType: "text/html; charset=utf-8");
+        }
 
         app.MapGet("/", ServeIndex);
 

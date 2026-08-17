@@ -1,5 +1,4 @@
 using System.Net.WebSockets;
-using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using NexusP2P.Core.Codes;
@@ -15,7 +14,7 @@ public static class SignalingEndpoints
     /// <summary>
     /// 对外统一的入房失败说明。
     ///
-    /// <para><b>「码不存在」与「位子被占」必须用同一句话。</b>任何差异都会
+    /// <para><b>「码不存在」与「位子被占/席位已满」必须用同一句话。</b>任何差异都会
     /// 让九位码有了枚举预言机 —— 攻击者靠错误信息就能筛出活跃房间。</para>
     /// </summary>
     private const string UnavailableMessage = "房间不可用：文件码可能不存在、已失效，或已经有人在接收了。";
@@ -42,10 +41,18 @@ public static class SignalingEndpoints
         var turn = context.RequestServices.GetRequiredService<TurnCredentialService>();
         var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
 
+        // AD-15：不带 maxReceivers 的旧客户端得到 1，行为与 V1 完全一致。
+        // 非法值一律夹回合法区间而不是报错 —— 建房是自己人发起的，没有必要惩罚。
+        var maxReceivers = 1;
+        if (int.TryParse(context.Request.Query["maxReceivers"], out var requested))
+        {
+            maxReceivers = Math.Clamp(requested, 1, options.MaxReceiversPerRoom);
+        }
+
         using var socket = await context.WebSockets.AcceptWebSocketAsync();
         using var sink = new WebSocketPeerSink(socket);
 
-        if (!registry.TryCreate(sink, out var code, out var room))
+        if (!registry.TryCreate(sink, out var code, out var room, maxReceivers))
         {
             await sink.SendAsync(
                 ServerMessage.Error("服务器当前房间过多，请稍后再试。"), context.RequestAborted);
@@ -55,10 +62,11 @@ public static class SignalingEndpoints
 
         var shareBase = $"{options.PublicOrigin.TrimEnd('/')}/{ShareLinkFactory.RoomPathSegment}";
         await sink.SendAsync(
-            ServerMessage.Created(code.Digits, shareBase, turn.BuildIceServers($"room-{code.Digits}")),
+            ServerMessage.Created(
+                code.Digits, shareBase, turn.BuildIceServers($"room-{code.Digits}"), maxReceivers),
             context.RequestAborted);
 
-        await PumpAsync(socket, sink, registry, room!, PeerRole.Sender, logger, context.RequestAborted);
+        await PumpSenderAsync(socket, sink, registry, room!, logger, context.RequestAborted);
     }
 
     private static async Task HandleJoinAsync(HttpContext context)
@@ -66,7 +74,6 @@ public static class SignalingEndpoints
         var rawCode = context.Request.RouteValues["code"]?.ToString();
         var limiter = context.RequestServices.GetRequiredService<JoinRateLimiter>();
         var registry = context.RequestServices.GetRequiredService<RoomRegistry>();
-        var options = context.RequestServices.GetRequiredService<IOptions<SignalingOptions>>().Value;
         var turn = context.RequestServices.GetRequiredService<TurnCredentialService>();
         var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
 
@@ -98,8 +105,9 @@ public static class SignalingEndpoints
         using var sink = new WebSocketPeerSink(socket);
 
         Room? room = null;
+        string? peerId = null;
         var outcome = parsed
-            ? registry.TryJoin(code, role, sink, out room)
+            ? registry.TryJoin(code, role, sink, out room, out peerId)
             : JoinOutcome.Unavailable;
 
         if (outcome != JoinOutcome.Joined)
@@ -109,63 +117,55 @@ public static class SignalingEndpoints
             return;
         }
 
-        // 两端几乎同时进房时，对端可能既被算进 peerPresent，又给我们发来
-        // 一条 peer-joined。客户端对此是幂等的，所以这里不需要额外同步。
-        var counterpart = room!.Counterpart(role);
+        var iceServers = turn.BuildIceServers($"room-{code.Digits}");
 
-        await sink.SendAsync(
-            ServerMessage.Joined(turn.BuildIceServers($"room-{code.Digits}"), counterpart is not null),
-            context.RequestAborted);
-
-        // 告诉对端有人来了
-        if (counterpart is { } peer)
+        if (role == PeerRole.Sender)
         {
-            await peer.SendAsync(
-                JsonSerializer.Serialize(ServerMessage.PeerJoined(), WebSocketPeerSink.JsonOptions),
-                context.RequestAborted);
+            // 发送方重连：应答里带当前在房的接收方列表（AD-12），
+            // 晚回来的一方不能干等 peer-joined。
+            await sink.SendAsync(
+                ServerMessage.SenderJoined(iceServers, room!.ReceiverIds), context.RequestAborted);
+
+            await PumpSenderAsync(socket, sink, registry, room, logger, context.RequestAborted);
+            return;
         }
 
-        await PumpAsync(socket, sink, registry, room, role, logger, context.RequestAborted);
+        // 两端几乎同时进房时，发送方可能既把这个接收方算进 peers，
+        // 又收到一条 peer-joined。客户端对此是幂等的，这里不需要额外同步。
+        await sink.SendAsync(
+            ServerMessage.ReceiverJoined(iceServers, room!.Sender is not null, peerId!),
+            context.RequestAborted);
+
+        // 只告诉发送方 —— 接收方之间互不可见（AD-12）
+        if (room.Sender is { } senderSink)
+        {
+            await SendToAsync(senderSink, ServerMessage.PeerJoined(peerId!), context.RequestAborted);
+        }
+
+        await PumpReceiverAsync(socket, sink, registry, room, peerId!, logger, context.RequestAborted);
     }
 
     /// <summary>
-    /// 收发循环：把客户端发来的 <c>signal</c> 原样转给对端。
-    /// 其他类型一律忽略 —— 服务器的职责只有转发。
+    /// 发送方的收发循环：<c>signal</c> 按 <c>to</c> 路由到指定接收方；
+    /// 不带 <c>to</c> 时只在「房里恰好一个接收方」时可路由（V1 客户端，AD-15）。
+    /// <c>to</c> 指向不存在的 peerId 时静默丢弃 —— 正常时序，不是协议违规。
     /// </summary>
-    private static async Task PumpAsync(
+    private static async Task PumpSenderAsync(
         WebSocket socket,
         WebSocketPeerSink sink,
         RoomRegistry registry,
         Room room,
-        PeerRole role,
         ILogger logger,
         CancellationToken cancellationToken)
     {
-        var buffer = new byte[MaxSignalMessageBytes];
-
         try
         {
-            while (socket.State == WebSocketState.Open)
+            await foreach (var message in ReadClientMessagesAsync(socket, cancellationToken).ConfigureAwait(false))
             {
-                var received = await ReceiveFullMessageAsync(socket, buffer, cancellationToken)
-                    .ConfigureAwait(false);
-
-                if (received is null)
+                var target = message.To is { Length: > 0 } to ? room.Receiver(to) : room.SoleReceiver;
+                if (target is { } receiver)
                 {
-                    break;   // 对端关闭或消息超限
-                }
-
-                if (!TryReadSignalPayload(buffer.AsSpan(0, received.Value), out var payload))
-                {
-                    continue;
-                }
-
-                if (room.Counterpart(role) is { } peer)
-                {
-                    await peer.SendAsync(
-                            JsonSerializer.Serialize(
-                                ServerMessage.Signal(payload), WebSocketPeerSink.JsonOptions),
-                            cancellationToken)
+                    await SendToAsync(receiver, ServerMessage.Signal(message.Payload!.Value), cancellationToken)
                         .ConfigureAwait(false);
                 }
             }
@@ -174,22 +174,93 @@ public static class SignalingEndpoints
         {
             if (logger.IsEnabled(LogLevel.Debug))
             {
-                logger.LogDebug("房间 {Code} 的 {Role} 连接断开：{Reason}", room.Code, role, ex.Message);
+                logger.LogDebug("房间 {Code} 的发送方连接断开：{Reason}", room.Code, ex.Message);
             }
         }
         finally
         {
-            registry.Leave(room, role, sink);
+            registry.Leave(room, PeerRole.Sender, sink);
 
-            if (room.Counterpart(role) is { } peer)
+            // 发送方走了要通知每个接收方（接收方的对端只有发送方，不需要 peerId）
+            foreach (var (_, receiver) in room.Receivers)
             {
-                await peer.SendAsync(
-                        JsonSerializer.Serialize(ServerMessage.PeerLeft(), WebSocketPeerSink.JsonOptions),
-                        CancellationToken.None)
+                await SendToAsync(receiver, ServerMessage.SenderLeft(), CancellationToken.None)
                     .ConfigureAwait(false);
             }
         }
     }
+
+    /// <summary>
+    /// 接收方的收发循环：<c>signal</c> 一律只路由到发送方，带 <c>to</c> 也忽略 ——
+    /// 接收方之间互不可见（AD-12），多暴露一个面只是白送攻击面。
+    /// </summary>
+    private static async Task PumpReceiverAsync(
+        WebSocket socket,
+        WebSocketPeerSink sink,
+        RoomRegistry registry,
+        Room room,
+        string peerId,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await foreach (var message in ReadClientMessagesAsync(socket, cancellationToken).ConfigureAwait(false))
+            {
+                if (room.Sender is { } sender)
+                {
+                    await SendToAsync(
+                            sender, ServerMessage.SignalFrom(message.Payload!.Value, peerId), cancellationToken)
+                        .ConfigureAwait(false);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is WebSocketException or OperationCanceledException)
+        {
+            if (logger.IsEnabled(LogLevel.Debug))
+            {
+                logger.LogDebug(
+                    "房间 {Code} 的接收方 {PeerId} 连接断开：{Reason}", room.Code, peerId, ex.Message);
+            }
+        }
+        finally
+        {
+            registry.LeaveReceiver(room, peerId, sink);
+
+            if (room.Sender is { } sender)
+            {
+                await SendToAsync(sender, ServerMessage.PeerLeft(peerId), CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <summary>逐条读出合法的 <c>signal</c> 消息，其他类型与畸形 JSON 一律跳过。</summary>
+    private static async IAsyncEnumerable<ClientMessage> ReadClientMessagesAsync(
+        WebSocket socket,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var buffer = new byte[MaxSignalMessageBytes];
+
+        while (socket.State == WebSocketState.Open)
+        {
+            var received = await ReceiveFullMessageAsync(socket, buffer, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (received is null)
+            {
+                yield break;   // 对端关闭或消息超限
+            }
+
+            if (TryReadSignal(buffer.AsSpan(0, received.Value), out var message))
+            {
+                yield return message;
+            }
+        }
+    }
+
+    private static Task SendToAsync(IPeerSink sink, ServerMessage message, CancellationToken cancellationToken) =>
+        sink.SendAsync(JsonSerializer.Serialize(message, WebSocketPeerSink.JsonOptions), cancellationToken);
 
     /// <summary>
     /// 读一条完整消息。超过上限就断开 —— 一条 SDP 不该有几百 KB，
@@ -226,24 +297,24 @@ public static class SignalingEndpoints
     }
 
     /// <summary>
-    /// 只取出 <c>signal</c> 消息的 payload。<b>不解析 payload 本身</b> ——
+    /// 只取出 <c>signal</c> 消息（payload + 可选 to）。<b>不解析 payload 本身</b> ——
     /// 它对服务器是不透明的。
     /// </summary>
-    private static bool TryReadSignalPayload(ReadOnlySpan<byte> utf8, out JsonElement payload)
+    private static bool TryReadSignal(ReadOnlySpan<byte> utf8, out ClientMessage message)
     {
-        payload = default;
+        message = null!;
 
         try
         {
-            var message = JsonSerializer.Deserialize<ClientMessage>(utf8, WebSocketPeerSink.JsonOptions);
+            var parsed = JsonSerializer.Deserialize<ClientMessage>(utf8, WebSocketPeerSink.JsonOptions);
 
-            if (message?.Type != "signal" || message.Payload is not { } value)
+            if (parsed?.Type != "signal" || parsed.Payload is not { } value)
             {
                 return false;
             }
 
             // Clone：JsonElement 默认指向已被释放的 JsonDocument 缓冲区
-            payload = value.Clone();
+            message = parsed with { Payload = value.Clone() };
             return true;
         }
         catch (JsonException)

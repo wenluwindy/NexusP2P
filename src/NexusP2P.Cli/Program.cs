@@ -80,6 +80,7 @@ internal static class CliApp
     {
         var path = Positional(args, 1) ?? throw new ArgumentException("send 需要一个文件或文件夹路径。");
         var options = ReadAgentOptions(args);
+        var maxPeers = ReadMaxPeers(args);
 
         Console.WriteLine($"正在计算校验和：{path}");
         var stopwatch = Stopwatch.StartNew();
@@ -95,6 +96,15 @@ internal static class CliApp
 
         var secret = TransferSecret.Generate();
         var root = ResolveSourceRoot(path);
+
+        // V2（AD-15）：--max-peers 1（默认）走 V1 单接收方路径，行为不变；
+        // 大于 1 才走扇出。两条路径不合并 —— 单收方的断线重连语义
+        //（ResilientSession 的整段重试）与扇出的逐链路独立语义不同。
+        if (maxPeers > 1)
+        {
+            return await SendFanOutAsync(
+                options, manifest, secret, root, maxPeers, ReadExitAfter(args), cancellationToken);
+        }
 
         await using var peers = ReconnectingPeerSource.ForSender(
             options,
@@ -133,6 +143,123 @@ internal static class CliApp
         Console.WriteLine();
         Console.WriteLine("传输完成，对方已确认收齐并通过校验。");
         return 0;
+    }
+
+    /// <summary>
+    /// 一对多发送（V2）：建房声明席位，接收方陆续进来就陆续开链路，
+    /// 全部已进入的链路结束后退出。
+    /// </summary>
+    private static async Task<int> SendFanOutAsync(
+        AgentOptions options,
+        NexusP2P.Core.Manifest.TransferManifest manifest,
+        TransferSecret secret,
+        string root,
+        int maxPeers,
+        int? exitAfter,
+        CancellationToken cancellationToken)
+    {
+        await using var source = new FilePieceSource(manifest, root);
+        using var cache = new CipherPieceCache(manifest, source, secret);
+        await using var sender = new FanOutSender(options, manifest, secret, cache);
+
+        var statusBoard = new FanOutStatusBoard(manifest.TotalLength);
+
+        // --exit-after N：收齐 N 人后自动退出（脚本与测试用；交互场景用 Ctrl+C）
+        var completedCount = 0;
+        var enoughCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        sender.PeerStatusChanged += status =>
+        {
+            statusBoard.Update(status);
+
+            if (exitAfter is { } target
+                && status.State == FanOutLinkState.Completed
+                && Interlocked.Increment(ref completedCount) >= target)
+            {
+                enoughCompleted.TrySetResult();
+            }
+        };
+
+        try
+        {
+            await sender.RunAsync(
+                maxPeers,
+                onRoomCreated: room =>
+                {
+                    Console.WriteLine();
+                    Console.WriteLine($"  文件码：{TransferCode.Parse(room.Code)}");
+                    if (!string.IsNullOrEmpty(room.ShareUrlBase))
+                    {
+                        Console.WriteLine($"  分享链接：{room.ShareUrlBase}/{room.Code}#{secret.ToBase64Url()}");
+                    }
+
+                    Console.WriteLine($"  密钥：{secret.ToBase64Url()}");
+
+                    if (room.MaxReceivers < maxPeers)
+                    {
+                        Console.WriteLine($"  （服务器把接收人数上限压到了 {room.MaxReceivers}）");
+                    }
+
+                    Console.WriteLine();
+                    Console.WriteLine(exitAfter is { } n
+                        ? $"等待接收（最多 {room.MaxReceivers} 人，收齐 {n} 人后结束）…"
+                        : $"等待接收（最多 {room.MaxReceivers} 人，Ctrl+C 结束）…");
+                },
+                until: exitAfter is null ? null : enoughCompleted.Task,
+                cancellationToken: cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // 用户按了 Ctrl+C：等已开的链路自然结束再总结
+        }
+
+        await sender.WhenAllLinksSettledAsync();
+
+        Console.WriteLine();
+        var peers = sender.Peers;
+        var completed = peers.Count(p => p.State == FanOutLinkState.Completed);
+        Console.WriteLine($"结束：{completed}/{peers.Count} 个接收方确认收齐并通过校验。");
+
+        foreach (var peer in peers.Where(p => p.State == FanOutLinkState.Failed))
+        {
+            Console.WriteLine($"  {peer.PeerId}：失败（{peer.Error?.Message ?? "原因未知"}）");
+        }
+
+        return completed == peers.Count && peers.Count > 0 ? 0 : 1;
+    }
+
+    /// <summary>读 --max-peers（默认 1 = V1 行为）。</summary>
+    private static int ReadMaxPeers(string[] args)
+    {
+        var raw = Option(args, "--max-peers");
+        if (raw is null)
+        {
+            return 1;
+        }
+
+        if (!int.TryParse(raw, out var value) || value < 1)
+        {
+            throw new ArgumentException($"--max-peers 必须是不小于 1 的整数，实际为 \"{raw}\"。");
+        }
+
+        return value;
+    }
+
+    /// <summary>读 --exit-after（仅一对多模式有意义；缺省 = 守到 Ctrl+C）。</summary>
+    private static int? ReadExitAfter(string[] args)
+    {
+        var raw = Option(args, "--exit-after");
+        if (raw is null)
+        {
+            return null;
+        }
+
+        if (!int.TryParse(raw, out var value) || value < 1)
+        {
+            throw new ArgumentException($"--exit-after 必须是不小于 1 的整数，实际为 \"{raw}\"。");
+        }
+
+        return value;
     }
 
     private static async Task<int> ReceiveAsync(string[] args, CancellationToken cancellationToken)
@@ -299,6 +426,7 @@ internal static class CliApp
 
         用法：
           nexusp2p send <文件或文件夹> --signaling <地址>
+          nexusp2p send <文件或文件夹> --max-peers 4 --signaling <地址>
           nexusp2p receive <分享链接> --dest <目录> --signaling <地址>
           nexusp2p receive <文件码> --key <密钥> --dest <目录> --signaling <地址>
 
@@ -306,6 +434,11 @@ internal static class CliApp
           --signaling <地址>   信令服务器，如 https://p2p.example.com
           --dest <目录>        接收目录，默认为当前目录
           --key <密钥>         用文件码（而非完整链接）接收时的密钥
+          --max-peers <人数>   同一个码最多允许几个人接收，默认 1。
+                               大于 1 时进入一对多模式：接收方陆续进来
+                               陆续传，Ctrl+C 结束守候。服务器可能压低上限。
+          --exit-after <人数>  一对多模式下，收齐这么多人后自动结束
+                               （不给则一直守到 Ctrl+C）。脚本化时用。
 
         信令地址来源，按优先级：
           1. --signaling 参数
@@ -394,6 +527,63 @@ internal sealed class HashProgress(Stopwatch stopwatch) : IProgress<long>
 
             _lastReport = stopwatch.Elapsed;
             Console.WriteLine($"  已处理 {CliApp.Format(hashedBytes)}");
+        }
+    }
+}
+
+/// <summary>
+/// 一对多的状态板：每个接收方一行，事件驱动刷新（限流），
+/// 进入/完成/失败都单独占一行说清楚 —— 多人场景下一行滚动进度分不清是谁的。
+/// </summary>
+internal sealed class FanOutStatusBoard(long totalBytes) : IProgress<NexusP2P.Agent.Transfers.FanOutPeerStatus>
+{
+    private readonly Lock _gate = new();
+    private readonly Dictionary<string, NexusP2P.Transfer.FanOutLinkState> _known = [];
+    private DateTimeOffset _lastDrawn = DateTimeOffset.MinValue;
+
+    public void Update(NexusP2P.Agent.Transfers.FanOutPeerStatus status) => Report(status);
+
+    public void Report(NexusP2P.Agent.Transfers.FanOutPeerStatus status)
+    {
+        lock (_gate)
+        {
+            var seenBefore = _known.TryGetValue(status.PeerId, out var previous);
+            _known[status.PeerId] = status.State;
+
+            // 状态跃迁必须打出来；纯进度更新限流
+            if (!seenBefore)
+            {
+                Console.WriteLine();
+                Console.WriteLine($"  [{status.PeerId}] 已进入，开始传输（{CliApp.Describe(status.CandidateKind)}）");
+                return;
+            }
+
+            if (status.State != previous)
+            {
+                Console.WriteLine();
+                Console.WriteLine(status.State switch
+                {
+                    NexusP2P.Transfer.FanOutLinkState.Completed =>
+                        $"  [{status.PeerId}] 已收齐并通过校验",
+                    NexusP2P.Transfer.FanOutLinkState.Failed =>
+                        $"  [{status.PeerId}] 失败：{status.Error?.Message ?? "原因未知"}",
+                    _ => $"  [{status.PeerId}] 传输中",
+                });
+                return;
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            if (now - _lastDrawn < TimeSpan.FromMilliseconds(500))
+            {
+                return;
+            }
+
+            _lastDrawn = now;
+
+            var total = status.Progress.TotalBytes > 0 ? status.Progress.TotalBytes : totalBytes;
+            var percent = total > 0 ? status.Progress.CompletedBytes * 100.0 / total : 0;
+            Console.Write($"\r  [{status.PeerId}] {percent,5:N1}%  " +
+                $"{CliApp.Format(status.Progress.CompletedBytes)} / {CliApp.Format(total)}        ");
         }
     }
 }

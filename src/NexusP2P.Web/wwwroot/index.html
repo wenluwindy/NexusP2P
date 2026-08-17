@@ -70,6 +70,15 @@
 
             <p id="sendSummary" class="summary hidden"></p>
 
+            <!-- 接收人数（V2）：默认 1 人 = 一对一，与 V1 完全相同。
+                 不设 max —— 上限由信令服务器的配置决定并在建房应答里回显 -->
+            <div class="input-group hidden" id="maxPeersGroup">
+                <label for="maxPeersInput">允许接收人数</label>
+                <input type="number" id="maxPeersInput" value="1" min="1"
+                       inputmode="numeric" autocomplete="off">
+                <p class="hint">1 人即一对一；多人同时接收时共享本机上行带宽，人越多每人越慢。</p>
+            </div>
+
             <button class="btn-primary btn-large hidden" id="startSendBtn">生成文件码并等待对方</button>
 
             <div id="sendPanel" class="send-panel hidden">
@@ -119,6 +128,8 @@
                     <span id="sendEta">剩余 --</span>
                 </div>
                 <p class="bottleneck" id="sendBottleneck"></p>
+                <!-- 接收方列表（V2）：只在一对多时出现 -->
+                <div id="receiverList" class="file-info hidden"></div>
             </div>
 
             <button class="btn-danger hidden" id="cancelSendBtn">取消</button>

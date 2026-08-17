@@ -43,8 +43,11 @@ public sealed class RoomRegistry(
     /// <summary>
     /// 建一个新房间并占住发送方的位子。
     /// 房间数达到上限时返回 false —— 宁可拒绝新建，也不让内存被吃光。
+    ///
+    /// <para><paramref name="maxReceivers"/> 是接收方席位数（AD-15）：
+    /// 默认 1 时行为与 V1 完全一致。调用方负责先把它夹到合法区间。</para>
     /// </summary>
-    public bool TryCreate(IPeerSink sender, out TransferCode code, out Room? room)
+    public bool TryCreate(IPeerSink sender, out TransferCode code, out Room? room, int maxReceivers = 1)
     {
         code = default;
         room = null;
@@ -60,7 +63,7 @@ public sealed class RoomRegistry(
         for (var attempt = 0; attempt < MaxCodeAllocationAttempts; attempt++)
         {
             var candidate = TransferCode.Generate();
-            var created = new Room(candidate, now);
+            var created = new Room(candidate, now, maxReceivers);
 
             if (!_rooms.TryAdd(candidate.Value, created))
             {
@@ -91,10 +94,14 @@ public sealed class RoomRegistry(
     /// 用文件码进入房间并占住指定角色的位子。
     ///
     /// <para>宽限期内的空房间仍然可以进 —— 这正是自动重连的依据（AD-7）。</para>
+    ///
+    /// <para>以接收方身份进入时 <paramref name="peerId"/> 是服务器分配的会话内
+    /// 标识（AD-12）；发送方没有 peerId，返回 null。</para>
     /// </summary>
-    public JoinOutcome TryJoin(TransferCode code, PeerRole role, IPeerSink sink, out Room? room)
+    public JoinOutcome TryJoin(TransferCode code, PeerRole role, IPeerSink sink, out Room? room, out string? peerId)
     {
         room = null;
+        peerId = null;
 
         if (!_rooms.TryGetValue(code.Value, out var existing))
         {
@@ -115,7 +122,11 @@ public sealed class RoomRegistry(
             return JoinOutcome.Unavailable;
         }
 
-        if (!existing.TryOccupy(role, sink))
+        var occupied = role == PeerRole.Sender
+            ? existing.TryOccupySender(sink)
+            : existing.TryAddReceiver(sink, out peerId);
+
+        if (!occupied)
         {
             if (logger.IsEnabled(LogLevel.Debug))
             {
@@ -132,13 +143,30 @@ public sealed class RoomRegistry(
         return JoinOutcome.Joined;
     }
 
+    /// <summary>V1 兼容入口：不需要 peerId 的调用方继续用它。</summary>
+    public JoinOutcome TryJoin(TransferCode code, PeerRole role, IPeerSink sink, out Room? room) =>
+        TryJoin(code, role, sink, out room, out _);
+
     /// <summary>成员离开。房间变空后进入宽限期，由 <see cref="Sweep"/> 回收。</summary>
     public void Leave(Room room, PeerRole role, IPeerSink sink)
     {
         ArgumentNullException.ThrowIfNull(room);
 
         room.Vacate(role, sink, timeProvider.GetUtcNow());
+        LogIfEmpty(room);
+    }
 
+    /// <summary>接收方按 peerId 离开（AD-12 的精确版本；引用双重校验在 Room 里做）。</summary>
+    public void LeaveReceiver(Room room, string peerId, IPeerSink sink)
+    {
+        ArgumentNullException.ThrowIfNull(room);
+
+        room.VacateReceiver(peerId, sink, timeProvider.GetUtcNow());
+        LogIfEmpty(room);
+    }
+
+    private void LogIfEmpty(Room room)
+    {
         if (room.IsEmpty)
         {
             if (logger.IsEnabled(LogLevel.Information))
