@@ -48,19 +48,25 @@ export class FanOutSignalingClient {
         const url = this._buildUrl(`/signal/create?maxReceivers=${maxReceivers}`);
         throwIfAborted(signal);
 
+        // 【与 SignalingClient._connect 同样的修复】：onmessage 必须在建 socket
+        // 的同一个同步块里挂上，否则应答到得快时会在窗口期丢失。
+        const queued = [];
+        let deliver = data => queued.push(data);
+
         await withAbort(new Promise((resolve, reject) => {
             this._socket = new WebSocket(url);
             this._socket.binaryType = 'arraybuffer';
+            this._socket.onmessage = event => deliver(event.data);
             this._socket.onopen = () => resolve();
             this._socket.onerror = () => reject(new SignalingError(
                 `连接信令服务器失败：${url}。可能是地址不对、服务未启动，或尝试过于频繁。`, true));
         }), signal, () => this._socket?.close());
 
         const message = await withAbort(new Promise((resolve, reject) => {
-            this._socket.onmessage = event => {
+            const handle = data => {
                 let parsed;
                 try {
-                    parsed = JSON.parse(event.data);
+                    parsed = JSON.parse(data);
                 } catch {
                     reject(new SignalingError('建房时收到无法解析的消息。'));
                     return;
@@ -75,8 +81,14 @@ export class FanOutSignalingClient {
                 }
             };
 
+            deliver = handle;
+
             this._socket.onclose = () => reject(new SignalingError(
                 '建房时连接被关闭，服务器没有给出应答。', true));
+
+            while (queued.length > 0) {
+                handle(queued.shift());
+            }
         }), signal, () => this._socket?.close());
 
         this._startPump();

@@ -137,9 +137,26 @@ export class SignalingClient {
         const url = this._buildUrl(path);
         throwIfAborted(signal);
 
+        // 【必须在建 socket 的同一个同步块里就挂上 onmessage】
+        //
+        // 服务器接受连接后**立刻**发 created/joined，不等客户端先说话。
+        // 而「等 open 决议」与「挂 onmessage」之间隔着若干 await 与
+        // .finally 跳板 —— 应答在这个窗口里到达时，会被投给一个还没有
+        // 处理器的 socket 然后永久消失，握手 Promise 再也不会决议。
+        //
+        // 症状极具误导性：WebSocket 是 101 成功的，浏览器 Network 面板里
+        // 那条 created 帧清清楚楚（帧的记录与 JS 有没有处理器无关），
+        // 控制台一个错都没有，界面却永远停在「等待生成…」。
+        //
+        // 所以这里先把消息攒进队列，真正的处理器挂好后再按原顺序补发 ——
+        // 与文件头第 2 条对信令用的是同一套办法，握手也不能例外。
+        const queued = [];
+        let deliver = data => queued.push(data);
+
         await withAbort(new Promise((resolve, reject) => {
             this._socket = new WebSocket(url);
             this._socket.binaryType = 'arraybuffer';
+            this._socket.onmessage = event => deliver(event.data);
             this._socket.onopen = () => resolve();
             this._socket.onerror = () => reject(new SignalingError(
                 `连接信令服务器失败：${url}。可能是地址不对、服务未启动，或尝试过于频繁。`, true));
@@ -147,10 +164,10 @@ export class SignalingClient {
 
         // 握手完成前到达的消息不能丢，照常走 _dispatch
         const handshake = await withAbort(new Promise((resolve, reject) => {
-            this._socket.onmessage = event => {
+            const handle = data => {
                 let message;
                 try {
-                    message = JSON.parse(event.data);
+                    message = JSON.parse(data);
                 } catch {
                     reject(new SignalingError(`${what}时收到无法解析的消息。`));
                     return;
@@ -174,8 +191,17 @@ export class SignalingClient {
                 this._dispatch(message);
             };
 
+            // 之后到达的直接走 handle
+            deliver = handle;
+
             this._socket.onclose = () => reject(new SignalingError(
                 `${what}时连接被关闭，服务器没有给出应答。`, true));
+
+            // 补发窗口期攒下的消息。重复 resolve/reject 是无害的空操作，
+            // 所以即使应答早就在队列里也能正确决议。
+            while (queued.length > 0) {
+                handle(queued.shift());
+            }
         }), signal, () => this._socket?.close());
 
         this._startPump();
