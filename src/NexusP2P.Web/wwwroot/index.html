@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
     <title>NexusP2P — 高速文件传输</title>
     <!--
         资源路径必须是绝对的（以 / 开头）。
@@ -14,20 +17,35 @@
 </head>
 <body>
     <div class="container">
-        <header>
+        <header class="hero">
+            <span class="hero-mark" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 9h15m-4-4 4 4-4 4"></path>
+                    <path d="M20 15H5m4 4-4-4 4-4"></path>
+                </svg>
+            </span>
             <h1>NexusP2P</h1>
             <p class="subtitle">点对点直连传输，内容端到端加密，服务器看不到你的文件</p>
         </header>
 
-        <div class="tabs">
-            <button class="tab-btn active" data-tab="send">发送</button>
-            <button class="tab-btn" data-tab="receive">接收</button>
-            <button class="tab-btn" data-tab="settings">设置</button>
+        <div class="tabs" role="tablist" aria-label="功能切换">
+            <button class="tab-btn active" data-tab="send" id="sendTabBtn"
+                    role="tab" aria-selected="true" aria-controls="send-tab">发送</button>
+            <button class="tab-btn" data-tab="receive" id="receiveTabBtn"
+                    role="tab" aria-selected="false" aria-controls="receive-tab">接收</button>
+            <button class="tab-btn" data-tab="settings" id="settingsTabBtn"
+                    role="tab" aria-selected="false" aria-controls="settings-tab">设置</button>
         </div>
 
         <!-- ---------------- 发送 ---------------- -->
-        <div id="send-tab" class="tab-content active">
+        <div id="send-tab" class="tab-content active" role="tabpanel" aria-labelledby="sendTabBtn">
             <div class="upload-area" id="uploadArea">
+                <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 15.5V4m0 0L8 8m4-4 4 4"></path>
+                    <path d="M4 14.5V18a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3.5"></path>
+                </svg>
                 <p class="upload-text">把文件或文件夹拖到这里</p>
                 <input type="file" id="fileInput" multiple hidden>
                 <input type="file" id="folderInput" webkitdirectory hidden>
@@ -43,7 +61,10 @@
                 <div class="progress-header">
                     <span class="status-text" id="hashStatus">正在计算校验和…</span>
                 </div>
-                <div class="progress-bar"><div class="progress-fill" id="hashBar"></div></div>
+                <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                     aria-valuenow="0" aria-label="校验和计算进度">
+                    <div class="progress-fill" id="hashBar"></div>
+                </div>
                 <p class="hint">校验和只用本机 CPU 算，还没开始传输。这一步让断点续传成为可能。</p>
             </div>
 
@@ -53,24 +74,31 @@
 
             <div id="sendPanel" class="send-panel hidden">
                 <div class="share-block">
-                    <h3>文件码</h3>
+                    <div class="share-head">
+                        <h3>文件码</h3>
+                        <button class="btn-copy" id="copyCodeBtn" aria-label="复制文件码">复制</button>
+                    </div>
                     <div class="code-display" id="shareCode">等待生成…</div>
-                    <button class="btn-copy" id="copyCodeBtn">复制文件码</button>
                 </div>
 
                 <div class="share-block">
-                    <h3>分享链接（推荐，已含密钥）</h3>
+                    <div class="share-head">
+                        <h3>分享链接<span class="tag">推荐</span></h3>
+                        <button class="btn-copy" id="copyLinkBtn" aria-label="复制分享链接">复制</button>
+                    </div>
                     <div class="link-display" id="shareLink">等待生成…</div>
-                    <button class="btn-copy" id="copyLinkBtn">复制链接</button>
+                    <p class="hint">链接里已经含密钥，对方点开就能收。</p>
                 </div>
 
                 <div class="share-block">
-                    <h3>密钥（只报文件码时需要单独给对方）</h3>
+                    <div class="share-head">
+                        <h3>密钥</h3>
+                        <button class="btn-copy" id="copyKeyBtn" aria-label="复制密钥">复制</button>
+                    </div>
                     <div class="link-display" id="shareKey">等待生成…</div>
-                    <button class="btn-copy" id="copyKeyBtn">复制密钥</button>
                     <p class="hint">
-                        密钥在链接的 <code>#</code> 之后，按规范永远不会发送到服务器 ——
-                        这就是服务器即使中继流量也无法解密的原因。
+                        只报文件码时，需要单独把密钥给对方。密钥在链接的 <code>#</code> 之后，
+                        按规范永远不会发送到服务器 —— 这就是服务器即使中继流量也无法解密的原因。
                     </p>
                 </div>
             </div>
@@ -80,7 +108,10 @@
                     <span class="status-text" id="sendStatus">等待对方接收…</span>
                     <span class="connection-type" id="sendConnectionType"></span>
                 </div>
-                <div class="progress-bar"><div class="progress-fill" id="sendProgressBar"></div></div>
+                <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                     aria-valuenow="0" aria-label="发送进度">
+                    <div class="progress-fill" id="sendProgressBar"></div>
+                </div>
                 <div class="progress-stats">
                     <span id="sendPercent">0%</span>
                     <span id="sendTransferred">0 B / 0 B</span>
@@ -94,7 +125,7 @@
         </div>
 
         <!-- ---------------- 接收 ---------------- -->
-        <div id="receive-tab" class="tab-content">
+        <div id="receive-tab" class="tab-content" role="tabpanel" aria-labelledby="receiveTabBtn">
             <div class="input-group">
                 <label for="receiveInput">分享链接或九位文件码</label>
                 <input type="text" id="receiveInput" placeholder="https://… 或 111-111-111"
@@ -102,9 +133,10 @@
             </div>
 
             <div class="input-group">
-                <label for="receiveKey">密钥（粘贴完整分享链接时可留空）</label>
+                <label for="receiveKey">密钥</label>
                 <input type="text" id="receiveKey" placeholder="链接里 # 后面那一长串"
                        autocomplete="off" spellcheck="false">
+                <p class="hint">粘贴完整分享链接时可以留空。</p>
             </div>
 
             <button class="btn-primary btn-large" id="startReceiveBtn">开始接收</button>
@@ -116,7 +148,10 @@
                     <span class="status-text" id="receiveStatus">正在连接…</span>
                     <span class="connection-type" id="receiveConnectionType"></span>
                 </div>
-                <div class="progress-bar"><div class="progress-fill" id="receiveProgressBar"></div></div>
+                <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                     aria-valuenow="0" aria-label="接收进度">
+                    <div class="progress-fill" id="receiveProgressBar"></div>
+                </div>
                 <div class="progress-stats">
                     <span id="receivePercent">0%</span>
                     <span id="receiveTransferred">0 B / 0 B</span>
@@ -133,35 +168,36 @@
         </div>
 
         <!-- ---------------- 设置 ---------------- -->
-        <div id="settings-tab" class="tab-content">
-            <div class="settings-section">
+        <div id="settings-tab" class="tab-content" role="tabpanel" aria-labelledby="settingsTabBtn">
+            <section class="settings-section">
                 <h3>信令服务器</h3>
                 <div class="input-group">
-                    <label for="signalingUrl">地址（留空表示用当前站点）</label>
+                    <label for="signalingUrl">地址</label>
                     <input type="text" id="signalingUrl" placeholder="https://p2p.example.com"
                            autocomplete="off" spellcheck="false">
+                    <p class="hint">留空表示用当前站点。</p>
                 </div>
                 <button class="btn-secondary" id="saveSettingsBtn">保存</button>
                 <p class="hint">
                     信令服务器只负责把两端接上，以及在直连失败时中继加密后的数据。
                     它拿不到密钥，因此看不到文件内容和文件名。
                 </p>
-            </div>
+            </section>
 
-            <div class="settings-section">
+            <section class="settings-section">
                 <h3>本浏览器的落盘能力</h3>
                 <div id="capabilities"></div>
-            </div>
+            </section>
 
-            <div class="settings-section">
+            <section class="settings-section">
                 <h3>关于</h3>
-                <p>NexusP2P — 点对点高速文件传输</p>
-                <p>传输内容用 AES-256-GCM 加密，完整性由 SHA-256 Merkle 树逐分片校验。</p>
-            </div>
+                <p class="about-line">NexusP2P — 点对点高速文件传输</p>
+                <p class="hint">传输内容用 AES-256-GCM 加密，完整性由 SHA-256 Merkle 树逐分片校验。</p>
+            </section>
         </div>
     </div>
 
-    <div id="notification" class="notification hidden"></div>
+    <div id="notification" class="notification hidden" role="status" aria-live="polite"></div>
 
     <script type="module" src="/js/app.js"></script>
 </body>

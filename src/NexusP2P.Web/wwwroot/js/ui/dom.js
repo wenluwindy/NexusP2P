@@ -30,7 +30,9 @@ function bindTabs() {
 
 export function activateTab(name) {
     for (const button of document.querySelectorAll('.tab-btn')) {
-        button.classList.toggle('active', button.dataset.tab === name);
+        const selected = button.dataset.tab === name;
+        button.classList.toggle('active', selected);
+        button.setAttribute('aria-selected', String(selected));
     }
 
     for (const panel of document.querySelectorAll('.tab-content')) {
@@ -139,7 +141,7 @@ export function updateHashProgress(progress, speed) {
         ? (progress.hashedBytes / progress.totalBytes) * 100
         : 0;
 
-    $('hashBar').style.width = `${percent.toFixed(1)}%`;
+    setBar('hashBar', percent);
     $('hashStatus').textContent =
         `正在计算校验和 ${formatSize(progress.hashedBytes)} / ${formatSize(progress.totalBytes)}` +
         `（${formatSpeed(speed)}）`;
@@ -158,7 +160,7 @@ export function setSendPhase(phase) {
         setSendStatus('等待对方接收…');
     } else if (phase === 'done') {
         setSendStatus('传输完成。');
-        $('sendProgressBar').style.width = '100%';
+        setBar('sendProgressBar', 100);
     }
 }
 
@@ -200,7 +202,7 @@ export function setReceivePhase(phase) {
     show('startReceiveBtn', phase === 'idle' || phase === 'done' || phase === 'failed');
 
     if (phase === 'done') {
-        $('receiveProgressBar').style.width = '100%';
+        setBar('receiveProgressBar', 100);
         setReceiveStatus('接收完成。');
     }
 }
@@ -292,12 +294,24 @@ export function prefillReceive({ code, secret }) {
 
 // ---------------- 公共 ----------------
 
+/**
+ * 写进度条宽度，同时把百分比同步到外层的 role="progressbar" 上 ——
+ * 宽度是给眼睛看的，aria-valuenow 是给读屏软件念的，两者必须一起动。
+ */
+function setBar(id, percent) {
+    const clamped = Math.min(Math.max(percent, 0), 100);
+    const fill = $(id);
+
+    fill.style.width = `${clamped.toFixed(1)}%`;
+    fill.parentElement?.setAttribute('aria-valuenow', clamped.toFixed(0));
+}
+
 function renderProgress(prefix, progress) {
     const percent = progress.totalBytes > 0
         ? (progress.completedBytes / progress.totalBytes) * 100
         : 0;
 
-    $(`${prefix}ProgressBar`).style.width = `${Math.min(percent, 100).toFixed(1)}%`;
+    setBar(`${prefix}ProgressBar`, percent);
     $(`${prefix}Percent`).textContent = `${percent.toFixed(1)}%`;
     $(`${prefix}Speed`).textContent = formatSpeed(progress.speed);
     $(`${prefix}Eta`).textContent = `剩余 ${formatDuration(progress.remaining)}`;

@@ -23,3 +23,6 @@ dist/
 # OS files
 .DS_Store
 Thumbs.db
+
+# 测试截图
+shots/
