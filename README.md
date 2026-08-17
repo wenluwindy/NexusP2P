@@ -6,6 +6,15 @@ NexusP2P 是一个面向大文件和文件夹的点对点传输平台。它使�
 
 > 当前项目仍处于持续开发阶段。发布包位于 [`dist/`](dist/)，部署相关文件位于 [`packaging/`](packaging/) 和 [`deploy/`](deploy/)。
 
+## 下载
+
+Windows 桌面客户端安装包发布在 [GitHub Releases](https://github.com/wenluwindy/NexusP2P/releases/latest)：
+
+- `NexusP2P-Setup-<版本>-win-x64.exe`：安装包，自包含运行时，无需另装 .NET
+- `nexusp2p-win-x64.zip`：免安装绿色包，含桌面端、命令行和信令服务器
+
+网页端在「设置」页也提供了同一个下载入口，无需安装即可直接使用。
+
 ## 功能特性
 
 - P2P 直连传输，支持局域网直连、公网打洞和 TURN 中继
