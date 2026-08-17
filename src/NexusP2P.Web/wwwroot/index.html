@@ -201,6 +201,40 @@
             </section>
 
             <section class="settings-section">
+                <h3>桌面客户端</h3>
+                <!--
+                    指向 /releases/latest 而不是某个具体版本号：GitHub 会自动
+                    重定向到最新一次发布，页面不必随每次发版改动。
+                -->
+                <a class="download-cta" id="desktopDownloadLink"
+                   href="https://github.com/wenluwindy/NexusP2P/releases/latest"
+                   target="_blank" rel="noopener noreferrer">
+                    <span class="download-cta-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 3v12m0 0-4.5-4.5M12 15l4.5-4.5"></path>
+                            <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path>
+                        </svg>
+                    </span>
+                    <span class="download-cta-body">
+                        <span class="download-cta-title">下载 Windows 桌面版</span>
+                        <span class="download-cta-sub">前往 GitHub Releases 获取最新安装包</span>
+                    </span>
+                    <span class="download-cta-arrow" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 5.5 20.5 12 14 18.5"></path>
+                            <path d="M20 12H3.5"></path>
+                        </svg>
+                    </span>
+                </a>
+                <p class="hint">
+                    桌面版支持拖放、托盘常驻和文件夹整目录传输，适合长时间、大体积的传输任务。
+                    网页端无需安装，打开即用。
+                </p>
+            </section>
+
+            <section class="settings-section">
                 <h3>关于</h3>
                 <p class="about-line">NexusP2P — 点对点高速文件传输</p>
                 <p class="hint">传输内容用 AES-256-GCM 加密，完整性由 SHA-256 Merkle 树逐分片校验。</p>
