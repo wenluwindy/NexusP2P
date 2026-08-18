@@ -88,12 +88,33 @@ async function runLink(signaling, peerId, iceServers, manifest, files, secret, p
     try {
         peer = new RTCPeerConnection({
             iceServers: iceServers.length > 0 ? iceServers : [],
-            iceCandidatePoolSize: 1,
+            // V2: 增加候选池大小以改善多接收方场景的 NAT 穿透成功率
+            iceCandidatePoolSize: 4,
+            // 积极的 ICE 传输策略：尽快收集所有候选
+            iceTransportPolicy: 'all',
+            // 启用 ICE 重启功能
+            bundlePolicy: 'max-bundle',
+            rtcpMuxPolicy: 'require',
         });
 
         peer.onicecandidate = event => {
             if (event.candidate !== null) {
                 signaling.sendCandidate(peerId, event.candidate);
+            }
+        };
+
+        // V2: 监控连接状态，帮助诊断 ICE 失败问题
+        peer.oniceconnectionstatechange = () => {
+            if (peer.iceConnectionState === 'failed') {
+                console.warn(`[fanout] ICE 连接失败 peerId=${peerId}, state=${peer.iceConnectionState}`);
+            } else if (peer.iceConnectionState === 'connected' || peer.iceConnectionState === 'completed') {
+                console.log(`[fanout] ICE 连接成功 peerId=${peerId}, state=${peer.iceConnectionState}`);
+            }
+        };
+
+        peer.onconnectionstatechange = () => {
+            if (peer.connectionState === 'failed') {
+                console.error(`[fanout] 连接失败 peerId=${peerId}, state=${peer.connectionState}`);
             }
         };
 

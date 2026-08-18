@@ -62,9 +62,24 @@ public sealed class TurnCredentialService(IOptions<SignalingOptions> options, Ti
     ///
     /// <para>没配 TURN 时返回空列表 —— 客户端只能靠 host/srflx 候选，
     /// 打洞失败就连不上。这是合法的部署形态（比如只在局域网用）。</para>
+    /// 
+    /// <para>V2 改进：即使没有配置 Secret，也会返回配置的 STUN 服务器（Urls），
+    /// 这样可以改善 NAT 穿透成功率。只有需要 TURN 中继时才必须配 Secret。</para>
     /// </summary>
     public IReadOnlyList<IceServer> BuildIceServers(string? userTag = null)
     {
+        // V2: 如果配置了 Urls 但没有 Secret，将 Urls 作为 STUN 服务器返回
+        if (Turn.Urls.Length > 0 && string.IsNullOrWhiteSpace(Turn.Secret))
+        {
+            return
+            [
+                new IceServer
+                {
+                    Urls = Turn.Urls,
+                },
+            ];
+        }
+
         if (!IsConfigured)
         {
             return [];

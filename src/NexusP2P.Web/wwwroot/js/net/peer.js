@@ -10,8 +10,8 @@
 
 import { SAFE_MAX_MESSAGE_SIZE } from '../core/frame.js';
 
-/** 建连超时。ICE 打不通时不会有任何回调，没有超时就是永久挂起。 */
-const CONNECT_TIMEOUT_MS = 30_000;
+/** 建连超时。ICE 打不通时不会有任何回调，没有超时就是永久挂起。V2: 增加到 60 秒以适应多接收方场景。 */
+const CONNECT_TIMEOUT_MS = 60_000;
 
 export const CandidatePairKind = {
     Unknown: 'unknown',

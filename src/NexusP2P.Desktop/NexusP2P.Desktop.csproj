@@ -25,7 +25,7 @@
       但它决定了自动更新的比较基准（见 Updates/UpdateService.cs 的
       CurrentVersion），所以保持与最新发布版本一致，别让它落后。
     -->
-    <Version>1.0.1</Version>
+    <Version>2.0.1</Version>
 
     <!-- WPF 需要 -windows 目标框架；Directory.Build.props 里的 net9.0 在这里被覆盖 -->
     <TargetFramework>net9.0-windows</TargetFramework>

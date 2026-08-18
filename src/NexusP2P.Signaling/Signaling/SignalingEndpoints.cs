@@ -76,10 +76,12 @@ public static class SignalingEndpoints
         var registry = context.RequestServices.GetRequiredService<RoomRegistry>();
         var turn = context.RequestServices.GetRequiredService<TurnCredentialService>();
         var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+        var options = context.RequestServices.GetRequiredService<IOptions<SignalingOptions>>().Value;
 
         // 限速放在 WebSocket 升级<b>之前</b>，这样才能返回一个真正的 429。
         // 升级之后就只能在应用层告知，客户端与中间设备都不认。
-        if (!limiter.TryRecordAttempt(context.Connection.RemoteIpAddress))
+        // V2: 仅在 EnableJoinRateLimit=true 时启用限速
+        if (options.EnableJoinRateLimit && !limiter.TryRecordAttempt(context.Connection.RemoteIpAddress))
         {
             logger.LogWarning("入房尝试被限速：{Address}", context.Connection.RemoteIpAddress);
             context.Response.StatusCode = StatusCodes.Status429TooManyRequests;

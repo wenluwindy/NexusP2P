@@ -29,8 +29,22 @@ public sealed class SignalingOptions
     /// </summary>
     public int RoomGracePeriodSeconds { get; set; } = 60;
 
-    /// <summary>同一 IP 每分钟允许的入房尝试次数。防止九位码被枚举。</summary>
-    public int JoinAttemptsPerMinute { get; set; } = 20;
+    /// <summary>
+    /// 是否启用入房速率限制。<b>默认关闭</b>以避免误伤正常用户。
+    /// 
+    /// <para>启用后，同一 IP 每分钟的入房尝试次数受 <see cref="JoinAttemptsPerMinute"/> 限制。
+    /// 用于防止九位码被暴力枚举。</para>
+    /// 
+    /// <para><b>生产环境建议开启</b>，特别是公开部署时。内网或受信任环境可以关闭。</para>
+    /// </summary>
+    public bool EnableJoinRateLimit { get; set; }
+
+    /// <summary>
+    /// 同一 IP 每分钟允许的入房尝试次数。防止九位码被枚举。
+    /// 
+    /// <para>仅在 <see cref="EnableJoinRateLimit"/> 为 true 时生效。</para>
+    /// </summary>
+    public int JoinAttemptsPerMinute { get; set; } = 100;
 
     /// <summary>房间总数上限。防止有人靠不停建房把内存吃光。</summary>
     public int MaxRooms { get; set; } = 1000;
@@ -124,9 +138,10 @@ public sealed class SignalingOptionsValidator : IValidateOptions<SignalingOption
             failures.Add("RoomGracePeriodSeconds 不能为负数。");
         }
 
-        if (options.JoinAttemptsPerMinute < 1)
+        // V2: 仅在启用速率限制时验证该配置
+        if (options.EnableJoinRateLimit && options.JoinAttemptsPerMinute < 1)
         {
-            failures.Add("JoinAttemptsPerMinute 至少为 1。");
+            failures.Add("启用速率限制时，JoinAttemptsPerMinute 至少为 1。");
         }
 
         if (options.MaxRooms < 1)
@@ -141,7 +156,18 @@ public sealed class SignalingOptionsValidator : IValidateOptions<SignalingOption
 
         if (options.Turn.Urls.Length > 0 && string.IsNullOrWhiteSpace(options.Turn.Secret))
         {
-            failures.Add("配置了 Turn:Urls 就必须同时配置 Turn:Secret，否则无法生成时限凭据。");
+            // V2: 允许只配置 STUN 服务器（Urls）而不配 Secret
+            // 检查是否所有 URL 都是 STUN 协议
+            var hasTurnUrl = options.Turn.Urls.Any(url => 
+                url.StartsWith("turn:", StringComparison.OrdinalIgnoreCase) || 
+                url.StartsWith("turns:", StringComparison.OrdinalIgnoreCase));
+            
+            if (hasTurnUrl)
+            {
+                failures.Add(
+                    "配置了 TURN 服务器（turn: 或 turns: 协议）就必须同时配置 Turn:Secret，" +
+                    "否则无法生成时限凭据。如果只想用 STUN 服务器，请确保所有 Urls 都是 stun: 协议。");
+            }
         }
 
         if (options.Turn.CredentialTtlSeconds < 60)

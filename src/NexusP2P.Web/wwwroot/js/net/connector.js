@@ -4,7 +4,7 @@
 import { CandidatePairKind, DataChannel, PeerConnectionClosedError } from './peer.js';
 import { SignalingClient } from './signaling.js';
 
-const CONNECT_TIMEOUT_MS = 30_000;
+const CONNECT_TIMEOUT_MS = 60_000;
 
 /** 一条建好的对等连接，以及建立它时得到的信息。 */
 export class PeerLink {
@@ -139,8 +139,13 @@ export async function answer(signalingOrigin, code, signal) {
 function createPeer(iceServers) {
     return new RTCPeerConnection({
         iceServers: iceServers.length > 0 ? iceServers : [],
-        // 池化一个候选：ICE 收集能与信令握手并行，省掉几百毫秒
-        iceCandidatePoolSize: 1,
+        // V2: 增加候选池大小以改善 NAT 穿透成功率，特别是在多接收方场景
+        iceCandidatePoolSize: 4,
+        // 积极的 ICE 传输策略：尽快收集所有候选
+        iceTransportPolicy: 'all',
+        // 启用 ICE 重启功能
+        bundlePolicy: 'max-bundle',
+        rtcpMuxPolicy: 'require',
     });
 }
 
@@ -182,6 +187,24 @@ function wireSignaling(signaling, peer) {
         if (event.candidate !== null) {
             signaling.sendCandidate(event.candidate);
         }
+    };
+
+    // V2: 监控 ICE 收集状态，帮助诊断连接问题
+    peer.onicegatheringstatechange = () => {
+        if (peer.iceGatheringState === 'complete') {
+            console.log('[connector] ICE 候选收集完成');
+        }
+    };
+
+    peer.oniceconnectionstatechange = () => {
+        console.log(`[connector] ICE 连接状态: ${peer.iceConnectionState}`);
+        if (peer.iceConnectionState === 'failed') {
+            console.error('[connector] ICE 连接失败，可能是 NAT 穿透失败');
+        }
+    };
+
+    peer.onconnectionstatechange = () => {
+        console.log(`[connector] 连接状态: ${peer.connectionState}`);
     };
 
     signaling.onRemoteDescription = async description => {

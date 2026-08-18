@@ -57,7 +57,7 @@ package_linux() {
 
     # 写一个简化的部署说明
     cat > "$out/部署说明.md" <<'EOF'
-# DLL 包部署说明
+# DLL 包部署说明 (V2.0.0)
 
 ## 前提：服务器上需要 .NET 9 运行时
 
@@ -78,9 +78,18 @@ cd /opt
 tar -xzf nexusp2p-signaling-linux-x64-dll.tar.gz
 mv nexusp2p-signaling-linux-x64-dll nexusp2p-signaling
 
-# 2. 改配置
+# 2. 改配置（V2.0.0 必改项）
 vi /opt/nexusp2p-signaling/appsettings.json
-# 必须改 PublicOrigin 和 BehindReverseProxy
+
+# ★ 必改：PublicOrigin（对外公开的地址）
+"PublicOrigin": "https://p2p.你的域名"
+
+# ★ 必改：BehindReverseProxy（如果用 nginx/Caddy）
+"BehindReverseProxy": true
+
+# ★ V2.0.0 新增：EnableJoinRateLimit
+# 生产环境建议 true，内网可设为 false
+"EnableJoinRateLimit": true
 
 # 3. 创建用户并安装服务
 useradd --system --no-create-home --shell /usr/sbin/nologin nexusp2p
@@ -96,6 +105,24 @@ systemctl status nexusp2p-signaling
 curl -s http://localhost:5000/health
 ```
 
+## V2.0.0 新特性
+
+### 1. STUN 服务器本地化（中国区优化）
+默认配置了国内可访问的 STUN 服务器：
+- 小米 STUN: stun.miwifi.com
+- 哔哩哔哩 STUN: stun.chat.bilibili.com
+- 湖南卫视 STUN: stun.hitv.com
+
+**无需修改**，开箱即用。
+
+### 2. 速率限制可选化
+新增 `EnableJoinRateLimit` 开关：
+- 生产环境：建议 `true`
+- 内网环境：可设为 `false`
+
+### 3. 一对多传输支持
+支持一个发送方对多个接收方同时传输。
+
 ## 用 1Panel 运行环境
 
 如果用 1Panel 的运行环境而不是 systemd：
@@ -106,6 +133,24 @@ curl -s http://localhost:5000/health
 4. 环境变量根据需要设置（不是必须）
 
 完整的 nginx 配置和注意事项见随包的 `nginx-nexusp2p.conf`。
+
+## 故障排查
+
+### 连接失败：等待数据通道打开超时
+**原因**: STUN 服务器不可达或防火墙阻止 UDP
+**解决**: 
+1. 检查防火墙是否允许 UDP 端口
+2. 测试 STUN 服务器连通性
+3. 如在海外，可改用 Google STUN
+
+### 429 Too Many Requests
+**原因**: 触发速率限制
+**解决**: 
+- 内网环境：设置 `"EnableJoinRateLimit": false`
+- 公网环境：增加 `JoinAttemptsPerMinute` 值
+
+### 更多帮助
+查看项目文档或访问 https://github.com/your-repo
 EOF
 
     rm -f "$out/web.config" "$out/nexusp2p-signaling.staticwebassets.endpoints.json"

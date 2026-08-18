@@ -1,6 +1,6 @@
 {
   "name": "nexusp2p-web",
-  "version": "1.0.0",
+  "version": "2.0.1",
   "private": true,
   "type": "module",
   "description": "NexusP2P 网页端。原生 ES 模块，无构建步骤 —— 改一行刷新页面就生效。",
