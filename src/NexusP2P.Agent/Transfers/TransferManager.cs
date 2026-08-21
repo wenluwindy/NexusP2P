@@ -162,11 +162,12 @@ public sealed class TransferManager : IAsyncDisposable
     }
 
     /// <summary>
-    /// 用分享链接或「文件码 + 密钥」接收。
+    /// 用九位文件码（或分享链接）接收。
     ///
-    /// <para><paramref name="destination"/> 为 null 时用设置里记住的目录（AD-9）。</para>
+    /// <para>V3 起<b>不再需要密钥</b>：它由发送方在连接建立后推过来。
+    /// <paramref name="destination"/> 为 null 时用设置里记住的目录（AD-9）。</para>
     /// </summary>
-    public async Task StartReceiveAsync(string target, string? key = null, string? destination = null)
+    public async Task StartReceiveAsync(string target, string? destination = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(target);
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -175,7 +176,7 @@ public sealed class TransferManager : IAsyncDisposable
 
         try
         {
-            var (code, secret) = ParseTarget(target, key);
+            var code = ParseTarget(target);
             var folder = destination ?? _settings.Load().EffectiveReceiveDirectory;
 
             // 传输开始前就检查，而不是传到一半才发现目标不可写或空间不够
@@ -201,7 +202,7 @@ public sealed class TransferManager : IAsyncDisposable
                 {
                     OnConnected(peers);
 
-                    return new ReceiveSession(secret, folder).RunAsync(
+                    return new ReceiveSession(folder).RunAsync(
                         connection,
                         ReportProgress(0, peers),
                         new Progress<RescanProgress>(rescan => Update(s => s with
@@ -302,7 +303,7 @@ public sealed class TransferManager : IAsyncDisposable
                         Code = TransferCode.Parse(room.Code).ToString(),
                         ShareUrl = string.IsNullOrEmpty(room.ShareUrlBase)
                             ? null
-                            : $"{room.ShareUrlBase}/{room.Code}#{secret.ToBase64Url()}",
+                            : $"{room.ShareUrlBase}/{room.Code}",
                         MaxReceivers = room.MaxReceivers,
                     }),
                     until: null,
@@ -454,14 +455,20 @@ public sealed class TransferManager : IAsyncDisposable
             return null;
         }
 
-        return $"{room.ShareUrlBase}/{room.Code}#{secret.ToBase64Url()}";
+        // V3：链接里不再带 # 密钥片段。密钥走数据通道，
+        // 所以链接本身就是「文件码的可点击形式」，没有别的秘密。
+        return $"{room.ShareUrlBase}/{room.Code}";
     }
 
-    private static (string Code, TransferSecret Secret) ParseTarget(string target, string? key)
+    /// <summary>
+    /// 从用户输入里取出文件码。接受九位码，也接受分享链接
+    /// （旧链接里 <c>#</c> 后面的密钥片段会被忽略 —— V3 不再需要它）。
+    /// </summary>
+    private static string ParseTarget(string target)
     {
         if (ShareLinkFactory.TryParse(target, out var link))
         {
-            return (link.Code.Digits, link.Secret);
+            return link.Code.Digits;
         }
 
         if (!TransferCode.TryParse(target, out var code))
@@ -469,17 +476,7 @@ public sealed class TransferManager : IAsyncDisposable
             throw new ArgumentException($"\"{target}\" 既不是分享链接，也不是九位文件码。");
         }
 
-        if (string.IsNullOrWhiteSpace(key))
-        {
-            throw new ArgumentException("用文件码接收时必须同时提供密钥（分享链接里 # 后面那一串）。");
-        }
-
-        if (!TransferSecret.TryFromBase64Url(key.Trim(), out var secret))
-        {
-            throw new ArgumentException("密钥格式不对。它应该是 43 个字符的一长串。");
-        }
-
-        return (code.Digits, secret);
+        return code.Digits;
     }
 
     /// <summary>
@@ -493,7 +490,7 @@ public sealed class TransferManager : IAsyncDisposable
         Signaling.SignalingException signaling => signaling.Message,
 
         TransferFailedException { Code: TransferErrorCode.InvalidManifest } =>
-            "对方的文件码或密钥与这次传输不匹配。请确认复制的是完整的分享链接。",
+            "无法解开对方发来的清单。对方可能用的是旧版本，或数据在途中被改动过。",
 
         TransferFailedException { Code: TransferErrorCode.InsufficientDiskSpace } =>
             "磁盘空间不足，无法容纳这次传输的全部内容。",

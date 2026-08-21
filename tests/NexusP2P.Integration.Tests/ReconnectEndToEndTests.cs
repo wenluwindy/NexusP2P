@@ -68,7 +68,7 @@ public sealed class ReconnectEndToEndTests
                 return Task.FromResult(receiverConnection);
             },
             session: (connection, ct) =>
-                new ReceiveSession(harness.Secret, destination)
+                new ReceiveSession(destination)
                     .RunAsync(connection, progress: null, rescanProgress: null, cancellationToken: ct),
             policy: policy ?? Fast,
             status: status);
@@ -150,9 +150,9 @@ public sealed class ReconnectEndToEndTests
     }
 
     [Fact]
-    public async Task 文件码不对时不重连而是立刻报错()
+    public async Task 清单解不开时不重连而是立刻报错()
     {
-        // 这是最重要的一条：重试「文件码不对」只是白等几秒再报同一个错，
+        // 这是最重要的一条：重试「清单解不开」只是白等几秒再报同一个错，
         // 还会让用户误以为是网络问题
         using var harness = new TransferHarness().With("a.bin", 10_000);
         var destination = harness.CreateTemporaryDirectory();
@@ -173,23 +173,30 @@ public sealed class ReconnectEndToEndTests
                     _ = unusedToken;
                     _ = Task.Run(async () =>
                     {
-                        await using var source = new MemoryPieceSource(manifest, harness.Files);
                         try
                         {
-                            await new SendSession(manifest, source, harness.Secret)
-                                .RunAsync(senderConnection);
+                            // 推一把密钥，却用另一把密封清单 —— 接收方解不开
+                            await senderConnection.SendAsync(
+                                MessageType.KeyOffer,
+                                new KeyOfferPayload(
+                                    NexusP2P.Core.Crypto.TransferSecret.Generate()).Serialize());
+
+                            var manifestKey =
+                                NexusP2P.Core.Crypto.KeyDerivation.DeriveManifestKey(harness.Secret);
+                            await senderConnection.SendAsync(
+                                MessageType.Manifest,
+                                NexusP2P.Core.Crypto.BlobCipher.Seal(manifestKey, manifest.Serialize()));
                         }
                         catch
                         {
-                            // 对端会因密钥不对报错并关闭
+                            // 对端会报错并关闭
                         }
                     }, CancellationToken.None);
 
                     return Task.FromResult(new ProtocolConnection(pair.Right));
                 },
                 session: (connection, ct) =>
-                    // 用一把错的密钥
-                    new ReceiveSession(NexusP2P.Core.Crypto.TransferSecret.Generate(), destination)
+                    new ReceiveSession(destination)
                         .RunAsync(connection, progress: null, rescanProgress: null, cancellationToken: ct),
                 policy: Fast));
 

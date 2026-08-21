@@ -1,16 +1,10 @@
 // 文件码与分享链接。对应 C# 的 TransferCode / ShareLinkFactory。
 //
-// 密钥必须位于 # 之后。URL fragment 按规范永不随请求发送到服务器，
-// 这是「服务器即使中继流量也无法解密」的全部依据。
-
-import { fromBase64Url, toBase64Url } from './bytes.js';
-import { SECRET_SIZE } from './crypto.js';
+// V3 起链接里**不再带密钥片段**：密钥由发送方在数据通道里推给接收方，
+// 所以链接就是「文件码的可点击形式」，没有别的秘密。
 
 export const DIGIT_COUNT = 9;
 export const ROOM_PATH_SEGMENT = 'r';
-
-/** base64url 编码后的密钥字符数（32 字节无填充）。 */
-const SECRET_ENCODED_LENGTH = 43;
 
 /**
  * 宽容解析文件码：忽略连字符、空格、以及它们的全角形式，
@@ -56,21 +50,14 @@ export function formatCode(digits) {
     return digits.replace(/(\d{3})(?=\d)/g, '$1-');
 }
 
-/** 解析 32 字节密钥。失败返回 null —— 输入是用户粘贴的文本。 */
-export function parseSecret(text) {
-    if (typeof text !== 'string' || text.length !== SECRET_ENCODED_LENGTH) {
-        return null;
-    }
-
-    const bytes = fromBase64Url(text);
-    return bytes !== null && bytes.length === SECRET_SIZE ? bytes : null;
-}
-
 /**
  * 解析分享链接。**与基址无关** —— 接收方拿到的链接可能来自任何域名，
- * 所以只看路径与片段，不校验主机。
+ * 所以只看路径，不校验主机。
  *
- * 返回 { code, secret } 或 null。
+ * V3 起链接不带密钥片段，所以只需取出文件码。旧链接（带 `#密钥`）
+ * 仍然能解析 —— 片段被忽略即可，用户不必知道链接格式变过。
+ *
+ * 返回 { code } 或 null。
  */
 export function parseShareLink(url) {
     if (typeof url !== 'string' || url.trim().length === 0) {
@@ -84,33 +71,23 @@ export function parseShareLink(url) {
         return null;
     }
 
-    // 片段以 '#' 开头；空片段说明密钥没带上
-    if (parsed.hash.length <= 1) {
-        return null;
-    }
-
-    const secret = parseSecret(parsed.hash.slice(1));
-    if (secret === null) {
-        return null;
-    }
-
     const segments = parsed.pathname.split('/').filter(s => s.length > 0);
     if (segments.length < 2 || segments[segments.length - 2] !== ROOM_PATH_SEGMENT) {
         return null;
     }
 
     const code = parseCode(segments[segments.length - 1]);
-    return code === null ? null : { code, secret };
+    return code === null ? null : { code };
 }
 
-/** 生成分享链接。密钥放在 fragment 里 —— 见文件头。 */
-export function buildShareLink(origin, code, secret) {
+/** 生成分享链接。V3 起不带密钥 —— 见文件头。 */
+export function buildShareLink(origin, code) {
     const base = origin.replace(/\/+$/, '');
-    return `${base}/${ROOM_PATH_SEGMENT}/${code}#${toBase64Url(secret)}`;
+    return `${base}/${ROOM_PATH_SEGMENT}/${code}`;
 }
 
 /**
- * 从当前页面地址取出房间码与密钥（接收方点开分享链接时）。
+ * 从当前页面地址取出房间码（接收方点开分享链接时）。
  * 不是分享链接格式就返回 null。
  */
 export function readShareLinkFromLocation() {

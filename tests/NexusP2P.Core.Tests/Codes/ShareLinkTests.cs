@@ -1,5 +1,4 @@
 using NexusP2P.Core.Codes;
-using NexusP2P.Core.Crypto;
 
 namespace NexusP2P.Core.Tests.Codes;
 
@@ -8,60 +7,28 @@ public sealed class ShareLinkTests
     private static readonly ShareLinkFactory Factory = new("https://p2p.example.com");
 
     /// <summary>
-    /// 端到端加密的全部依据就是这一条：密钥位于 <c>#</c> 之后。
-    /// URL fragment 按规范永不随请求发送到服务器 ——
-    /// 一旦有人把密钥挪进路径或查询串，服务器就能解密所有流量，
-    /// 而这种改动在代码评审里极易被忽略。所以专门盯住它。
+    /// V3 的核心不变式：链接里<b>没有任何秘密</b>。
+    ///
+    /// <para>V1/V2 靠「密钥在 fragment 里」保证服务器无法解密，代价是用户
+    /// 得转述 43 个字符。V3 把密钥挪进了数据通道，于是链接退化成
+    /// 「文件码的可点击形式」—— 这条测试盯住的就是「别再往里塞东西」。</para>
     /// </summary>
     [Fact]
-    public void 密钥位于_fragment_之后而不在服务器可见的部分()
+    public void 链接里不含任何秘密()
     {
-        var secret = TransferSecret.Generate();
-        var encoded = secret.ToBase64Url();
+        var url = Factory.Create(TransferCode.Parse("123456789"));
 
-        var url = Factory.Create(TransferCode.Parse("123456789"), secret);
-
-        var hashIndex = url.IndexOf('#', StringComparison.Ordinal);
-        Assert.True(hashIndex > 0, "链接里必须有 '#'");
-
-        var serverVisible = url[..hashIndex];
-        var fragment = url[(hashIndex + 1)..];
-
-        Assert.Equal(encoded, fragment);
-        Assert.DoesNotContain(encoded, serverVisible, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void 服务器看到的路径与查询串里没有密钥()
-    {
-        // 换个角度再验一次：按 Uri 的语义拆开，模拟服务端实际收到的东西
-        var secret = TransferSecret.Generate();
-        var url = Factory.Create(TransferCode.Parse("987654321"), secret);
-
-        var uri = new Uri(url);
-        var whatServerReceives = uri.AbsolutePath + uri.Query;
-
-        Assert.DoesNotContain(secret.ToBase64Url(), whatServerReceives, StringComparison.Ordinal);
-        Assert.Empty(uri.Query);
-    }
-
-    [Fact]
-    public void 链接格式符合预期()
-    {
-        var secret = TransferSecret.Generate();
-
-        var url = Factory.Create(TransferCode.Parse("123456789"), secret);
-
-        Assert.Equal($"https://p2p.example.com/r/123456789#{secret.ToBase64Url()}", url);
+        Assert.DoesNotContain("#", url, StringComparison.Ordinal);
+        Assert.Equal("https://p2p.example.com/r/123456789", url);
     }
 
     [Fact]
     public void 链接里用无分隔的九位数字()
     {
         // 展示给人看的是 123-456-789，但 URL 里用纯数字，免得路由要处理连字符
-        var url = Factory.Create(TransferCode.Parse("123-456-789"), TransferSecret.Generate());
+        var url = Factory.Create(TransferCode.Parse("123-456-789"));
 
-        Assert.Contains("/r/123456789#", url, StringComparison.Ordinal);
+        Assert.Contains("/r/123456789", url, StringComparison.Ordinal);
         Assert.DoesNotContain("123-456-789", url, StringComparison.Ordinal);
     }
 
@@ -69,64 +36,56 @@ public sealed class ShareLinkTests
     public void 往返无损()
     {
         var code = TransferCode.Generate();
-        var secret = TransferSecret.Generate();
 
-        var url = Factory.Create(code, secret);
+        var url = Factory.Create(code);
 
         Assert.True(ShareLinkFactory.TryParse(url, out var link));
         Assert.Equal(code, link.Code);
-        Assert.Equal(secret, link.Secret);
     }
 
     [Fact]
     public void 解析与基址无关()
     {
         // 接收方拿到的链接可能来自任何域名或端口，解析不该校验主机
-        var secret = TransferSecret.Generate();
-        var encoded = secret.ToBase64Url();
-
         foreach (var url in new[]
                  {
-                     $"https://other.example.org/r/111222333#{encoded}",
-                     $"http://192.168.1.10:8443/r/111222333#{encoded}",
-                     $"https://p2p.example.com:8443/r/111222333#{encoded}",
-                     $"https://example.com/sub/path/r/111222333#{encoded}",
+                     "https://other.example.org/r/111222333",
+                     "http://192.168.1.10:8443/r/111222333",
+                     "https://p2p.example.com:8443/r/111222333",
+                     "https://example.com/sub/path/r/111222333",
                  })
         {
             Assert.True(ShareLinkFactory.TryParse(url, out var link), $"\"{url}\" 本应能解析");
             Assert.Equal("111222333", link.Code.Digits);
-            Assert.Equal(secret, link.Secret);
         }
+    }
+
+    /// <summary>
+    /// V1/V2 生成的链接带 <c>#密钥</c>。它们仍然要能解析出文件码 ——
+    /// 用户不该因为手里拿的是一条旧链接就被卡住，而那段密钥现在只是
+    /// 一段无用的字符。
+    /// </summary>
+    [Fact]
+    public void 旧链接的密钥片段被忽略但码仍可解析()
+    {
+        const string legacy =
+            "https://p2p.example.com/r/111222333#AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+        Assert.True(ShareLinkFactory.TryParse(legacy, out var link));
+        Assert.Equal("111222333", link.Code.Digits);
     }
 
     [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("not a url")]
-    [InlineData("https://example.com/r/111222333")]                       // 缺密钥
-    [InlineData("https://example.com/r/111222333#")]                      // 空片段
-    [InlineData("https://example.com/r/111222333#tooshort")]              // 密钥长度不对
-    [InlineData("https://example.com/r/12345#AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")]  // 码只有 5 位
-    [InlineData("https://example.com/x/111222333#AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")] // 路径段不对
-    [InlineData("https://example.com/111222333#AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")]   // 少了 /r/
+    [InlineData("ftp://example.com/r/111222333")]        // 协议不对
+    [InlineData("https://example.com/r/12345")]          // 码只有 5 位
+    [InlineData("https://example.com/x/111222333")]      // 路径段不对
+    [InlineData("https://example.com/111222333")]        // 少了 /r/
     public void 非法链接被拒绝(string? url)
     {
         Assert.False(ShareLinkFactory.TryParse(url, out _));
-    }
-
-    [Fact]
-    public void 密钥被篡改一个字符后解析出的密钥不同()
-    {
-        var secret = TransferSecret.Generate();
-        var url = Factory.Create(TransferCode.Parse("111222333"), secret);
-
-        var hashIndex = url.IndexOf('#', StringComparison.Ordinal);
-        var mutated = url[..(hashIndex + 1)] +
-                      (url[hashIndex + 1] == 'A' ? 'B' : 'A') +
-                      url[(hashIndex + 2)..];
-
-        Assert.True(ShareLinkFactory.TryParse(mutated, out var link));
-        Assert.NotEqual(secret, link.Secret);
     }
 
     // ---- 基址校验（AD-8：配置错了要快速失败，而不是生成一堆废链接）----
@@ -149,10 +108,8 @@ public sealed class ShareLinkTests
     [Fact]
     public void 基址末尾的斜杠被规范化()
     {
-        var secret = TransferSecret.Generate();
-
-        var withSlash = new ShareLinkFactory("https://p2p.example.com/").Create(TransferCode.Parse("111222333"), secret);
-        var withoutSlash = new ShareLinkFactory("https://p2p.example.com").Create(TransferCode.Parse("111222333"), secret);
+        var withSlash = new ShareLinkFactory("https://p2p.example.com/").Create(TransferCode.Parse("111222333"));
+        var withoutSlash = new ShareLinkFactory("https://p2p.example.com").Create(TransferCode.Parse("111222333"));
 
         Assert.Equal(withoutSlash, withSlash);
         Assert.DoesNotContain("//r/", withSlash, StringComparison.Ordinal);
@@ -161,23 +118,21 @@ public sealed class ShareLinkTests
     [Fact]
     public void 支持带子路径的基址()
     {
-        var secret = TransferSecret.Generate();
         var factory = new ShareLinkFactory("https://example.com/nexus");
 
-        var url = factory.Create(TransferCode.Parse("111222333"), secret);
+        var url = factory.Create(TransferCode.Parse("111222333"));
 
-        Assert.Equal($"https://example.com/nexus/r/111222333#{secret.ToBase64Url()}", url);
+        Assert.Equal("https://example.com/nexus/r/111222333", url);
         Assert.True(ShareLinkFactory.TryParse(url, out var link));
-        Assert.Equal(secret, link.Secret);
+        Assert.Equal("111222333", link.Code.Digits);
     }
 
     [Fact]
     public void 支持非标端口()
     {
-        var secret = TransferSecret.Generate();
         var factory = new ShareLinkFactory("https://example.com:8443");
 
-        var url = factory.Create(TransferCode.Parse("111222333"), secret);
+        var url = factory.Create(TransferCode.Parse("111222333"));
 
         Assert.StartsWith("https://example.com:8443/r/", url, StringComparison.Ordinal);
     }

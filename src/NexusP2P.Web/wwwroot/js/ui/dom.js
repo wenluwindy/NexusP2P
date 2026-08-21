@@ -77,7 +77,6 @@ function bindSendActions() {
 
     $('copyCodeBtn').addEventListener('click', () => copyText($('shareCode').dataset.raw, '文件码'));
     $('copyLinkBtn').addEventListener('click', () => copyText($('shareLink').textContent, '分享链接'));
-    $('copyKeyBtn').addEventListener('click', () => copyText($('shareKey').textContent, '密钥'));
 }
 
 /** 跑一个界面动作，出了意外就说出来 —— 不留「点了没反应」这种状态。 */
@@ -99,7 +98,7 @@ function reportUnexpected(error) {
 
 function bindReceiveActions() {
     $('startReceiveBtn').addEventListener('click', () => guard(() =>
-        handlers.onStartReceive($('receiveInput').value.trim(), $('receiveKey').value)));
+        handlers.onStartReceive($('receiveInput').value.trim())));
 
     $('cancelReceiveBtn').addEventListener('click', () => guard(() => handlers.onCancel()));
 }
@@ -269,7 +268,7 @@ export function setSendStatus(text) {
     $('sendStatus').textContent = text;
 }
 
-export function showShareCode(room, secret) {
+export function showShareCode(room) {
     const code = $('shareCode');
     code.textContent = formatCode(room.code);
     code.dataset.raw = room.code;
@@ -278,17 +277,7 @@ export function showShareCode(room, secret) {
         ? room.shareUrlBase.replace(/\/r$/, '')
         : window.location.origin;
 
-    $('shareLink').textContent = buildShareLink(base, room.code, secret);
-    $('shareKey').textContent = toBase64UrlText(secret);
-}
-
-function toBase64UrlText(secret) {
-    let binary = '';
-    for (const byte of secret) {
-        binary += String.fromCharCode(byte);
-    }
-
-    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    $('shareLink').textContent = buildShareLink(base, room.code);
 }
 
 export function updateSendProgress(progress) {
@@ -386,11 +375,10 @@ export function showDownloads(result) {
     show('downloads', true);
 }
 
-export function prefillReceive({ code, secret }) {
+export function prefillReceive({ code }) {
     $('receiveInput').value = formatCode(code);
-    $('receiveKey').value = toBase64UrlText(secret);
     activateTab('receive');
-    notify('已从分享链接读取文件码和密钥，点「开始接收」即可。', 'success');
+    notify('已从分享链接读取文件码，点「开始接收」即可。', 'success');
 }
 
 // ---------------- 公共 ----------------

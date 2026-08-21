@@ -269,7 +269,7 @@ console.log('C# 发送端 → 网页端接收（这是更常见的方向：exe �
     let received = null;
 
     try {
-        received = await new ReceiveSession(secret, manifest => {
+        received = await new ReceiveSession(manifest => {
             writer = new MemoryWriter(manifest);
             return writer;
         }).run(new ProtocolConnection(channel));

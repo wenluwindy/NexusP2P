@@ -1,19 +1,27 @@
 using System.Diagnostics.CodeAnalysis;
-using NexusP2P.Core.Crypto;
 
 namespace NexusP2P.Core.Codes;
 
-/// <summary>分享链接里承载的两样东西：房间码与密钥材料。</summary>
-public readonly record struct ShareLink(TransferCode Code, TransferSecret Secret);
+/// <summary>分享链接里承载的东西。V3 起只有房间码。</summary>
+public readonly record struct ShareLink(TransferCode Code);
 
 /// <summary>
 /// 生成分享链接。形如：
-/// <c>https://域名/r/111111111#&lt;base64url 密钥&gt;</c>
+/// <c>https://域名/r/111111111</c>
 ///
-/// <para><b>密钥必须位于 <c>#</c> 之后</b>。URL fragment 按规范永不随请求
-///发送到服务器，这是「服务器即使中继流量也无法解密」的全部依据。
-/// 一旦有人把它挪到查询串里，端到端加密就在事实上失效了 ——
-/// 所以有一条专门的测试盯着这件事。</para>
+/// <para><b>V3 起链接里不再有密钥。</b>密钥由发送方在数据通道建立后直接推给
+/// 接收方（见 <c>MessageType.KeyOffer</c>），所以链接就是「文件码的可点击
+/// 形式」，本身不含任何秘密。</para>
+///
+/// <para>这解决的是一个产品问题而不是技术问题：43 个字符的密钥根本无法口头
+/// 转述，用户只能把它和链接一起发到聊天工具里 —— 而既然要用聊天工具，
+/// 不如直接发文件。把密钥从人的手里拿走，九位码才真正可用。</para>
+///
+/// <para><b>代价必须写明</b>：V1/V2 里密钥在 URL fragment 中，规范保证它永不
+/// 发往服务器，所以信令服务器从密码学上无法解密任何字节；V3 里服务器若
+/// <b>主动</b>在 SDP 交换阶段做中间人就能拿到密钥。即从「服务器无能为力」
+/// 退化为「服务器不主动作恶即安全」。被动记录流量的服务器仍然一无所获 ——
+/// 密钥在 DTLS 里传输。</para>
 ///
 /// <para>基址来自配置而非硬编码（AD-8）。服务器<b>绑定的地址不等于对外公开的
 /// URL</b> —— 反向代理、NAT、端口映射都会让两者不同，所以必须显式配置，
@@ -54,17 +62,21 @@ public sealed class ShareLinkFactory
         PublicOrigin = uri;
     }
 
-    public string Create(ShareLink link) => Create(link.Code, link.Secret);
+    public string Create(ShareLink link) => Create(link.Code);
 
-    public string Create(TransferCode code, TransferSecret secret)
+    public string Create(TransferCode code)
     {
         var basePath = PublicOrigin.GetLeftPart(UriPartial.Path).TrimEnd('/');
-        return $"{basePath}/{RoomPathSegment}/{code.Digits}#{secret.ToBase64Url()}";
+        return $"{basePath}/{RoomPathSegment}/{code.Digits}";
     }
 
     /// <summary>
     /// 解析分享链接。<b>与基址无关</b> —— 接收方拿到的链接可能来自任何域名，
-    /// 所以只看路径与片段，不校验主机。
+    /// 所以只看路径，不校验主机。
+    ///
+    /// <para><b>片段被忽略</b>：V1/V2 生成的链接带 <c>#密钥</c>，
+    /// 它们仍然要能解析出文件码。用户不该因为拿到的是一条旧链接就被卡住 ——
+    /// 而那段密钥现在只是一段无用的字符。</para>
     /// </summary>
     public static bool TryParse([NotNullWhen(true)] string? url, out ShareLink link)
     {
@@ -80,14 +92,7 @@ public sealed class ShareLinkFactory
             return false;
         }
 
-        // 片段以 '#' 开头；空片段说明密钥没带上
-        var fragment = uri.Fragment;
-        if (fragment.Length <= 1)
-        {
-            return false;
-        }
-
-        if (!TransferSecret.TryFromBase64Url(fragment[1..], out var secret))
+        if (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp)
         {
             return false;
         }
@@ -104,7 +109,7 @@ public sealed class ShareLinkFactory
             return false;
         }
 
-        link = new ShareLink(code, secret);
+        link = new ShareLink(code);
         return true;
     }
 }

@@ -92,22 +92,13 @@
 
                 <div class="share-block">
                     <div class="share-head">
-                        <h3>分享链接<span class="tag">推荐</span></h3>
+                        <h3>分享链接</h3>
                         <button class="btn-copy" id="copyLinkBtn" aria-label="复制分享链接">复制</button>
                     </div>
                     <div class="link-display" id="shareLink">等待生成…</div>
-                    <p class="hint">链接里已经含密钥，对方点开就能收。</p>
-                </div>
-
-                <div class="share-block">
-                    <div class="share-head">
-                        <h3>密钥</h3>
-                        <button class="btn-copy" id="copyKeyBtn" aria-label="复制密钥">复制</button>
-                    </div>
-                    <div class="link-display" id="shareKey">等待生成…</div>
                     <p class="hint">
-                        只报文件码时，需要单独把密钥给对方。密钥在链接的 <code>#</code> 之后，
-                        按规范永远不会发送到服务器 —— 这就是服务器即使中继流量也无法解密的原因。
+                        对方点开就能收。念文件码也一样 —— 不需要再单独转述密钥，
+                        它会在连接建立后自动发过去。
                     </p>
                 </div>
             </div>
@@ -138,16 +129,10 @@
         <!-- ---------------- 接收 ---------------- -->
         <div id="receive-tab" class="tab-content" role="tabpanel" aria-labelledby="receiveTabBtn">
             <div class="input-group">
-                <label for="receiveInput">分享链接或九位文件码</label>
-                <input type="text" id="receiveInput" placeholder="https://… 或 111-111-111"
+                <label for="receiveInput">九位文件码或分享链接</label>
+                <input type="text" id="receiveInput" placeholder="111-111-111 或 https://…"
                        autocomplete="off" spellcheck="false">
-            </div>
-
-            <div class="input-group">
-                <label for="receiveKey">密钥</label>
-                <input type="text" id="receiveKey" placeholder="链接里 # 后面那一长串"
-                       autocomplete="off" spellcheck="false">
-                <p class="hint">粘贴完整分享链接时可以留空。</p>
+                <p class="hint">不需要密钥 —— 连上之后由发送方自动提供。</p>
             </div>
 
             <button class="btn-primary btn-large" id="startReceiveBtn">开始接收</button>
@@ -191,7 +176,8 @@
                 <button class="btn-secondary" id="saveSettingsBtn">保存</button>
                 <p class="hint">
                     信令服务器只负责把两端接上，以及在直连失败时中继加密后的数据。
-                    它拿不到密钥，因此看不到文件内容和文件名。
+                    数据在两端之间加密传输，中继过程中它读不到内容 ——
+                    但密钥现在也经由这条连接协商，所以请使用你信任的信令服务器。
                 </p>
             </section>
 

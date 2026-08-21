@@ -278,7 +278,7 @@ console.log('同一份清单驱动 3 条独立链路，三个接收方都逐字�
     for (let i = 0; i < 3; i++) {
         const [senderChannel, receiverChannel] = LoopbackChannel.pair();
 
-        const receive = new ReceiveSession(secret, m => {
+        const receive = new ReceiveSession(m => {
             const writer = new MemoryWriter(m);
             writers.push(writer);
             return writer;
@@ -325,7 +325,7 @@ console.log('一条链路断掉不影响其他链路（AD-11）');
 
         const [senderChannel, receiverChannel] = LoopbackChannel.pair(fault);
 
-        const receive = new ReceiveSession(secret, m => {
+        const receive = new ReceiveSession(m => {
             const writer = new MemoryWriter(m);
             writers[i] = writer;
             return writer;

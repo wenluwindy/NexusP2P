@@ -15,6 +15,38 @@ export const TransferErrorCode = {
 
 const MAX_ERROR_MESSAGE_BYTES = 4096;
 
+/** 密钥要约的载荷字节数，恒为密钥材料的长度。 */
+export const KEY_OFFER_SIZE = 32;
+
+/**
+ * 序列化密钥要约（V3）：裸的 32 字节，没有任何头部。
+ *
+ * 长度是固定的，而一个可变长度字段只会给攻击者多一个可以撒谎的地方。
+ * 不做任何混淆或二次加密 —— 这条消息的机密性完全依赖 WebRTC 的 DTLS 层。
+ */
+export function serializeKeyOffer(secret) {
+    if (secret.length !== KEY_OFFER_SIZE) {
+        throw new Error(`密钥材料必须是 ${KEY_OFFER_SIZE} 字节，实际为 ${secret.length} 字节。`);
+    }
+
+    return new Uint8Array(secret);
+}
+
+/**
+ * 解析密钥要约。长度必须精确匹配 —— 多一个字节都当协议违规处理。
+ *
+ * 「宽容地只取前 32 字节」会让实现分歧静默地变成解密失败，
+ * 而那种失败在现场看起来像是「文件码不对」，极难排查。
+ */
+export function parseKeyOffer(payload) {
+    if (payload.length !== KEY_OFFER_SIZE) {
+        throw new Error(
+            `KeyOffer 消息必须是 ${KEY_OFFER_SIZE} 字节，实际为 ${payload.length} 字节。`);
+    }
+
+    return new Uint8Array(payload);
+}
+
 /**
  * 序列化一个分片：位置头 ‖ 密文。
  *

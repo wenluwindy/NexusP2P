@@ -16,6 +16,14 @@ export const MessageType = {
     Complete: 0x04,
     Error: 0x05,
     PushComplete: 0x06,
+
+    // V3：发送方 → 接收方，本次传输的 32 字节密钥材料，通道建立后的首条消息。
+    //
+    // 这条消息把「文件码 + 密钥」缩成了「只要文件码」。威胁模型因此变化：
+    // V1/V2 里密钥在 URL fragment 中，信令服务器从密码学上无法解密任何字节；
+    // V3 里服务器若**主动**在 SDP 交换阶段做中间人就能拿到密钥。
+    // 被动记录流量的服务器仍然什么都拿不到 —— 载荷在 DTLS 里。
+    KeyOffer: 0x07,
 };
 
 const KNOWN_TYPES = new Set(Object.values(MessageType));

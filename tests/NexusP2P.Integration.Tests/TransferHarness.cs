@@ -105,7 +105,7 @@ internal sealed class TransferHarness : IDisposable
 
         await using var source = new MemoryPieceSource(manifest, Files);
         var sender = new SendSession(manifest, source, Secret);
-        var receiver = new ReceiveSession(Secret, destinationRoot);
+        var receiver = new ReceiveSession(destinationRoot);
 
         Exception? senderError = null;
         Exception? receiverError = null;

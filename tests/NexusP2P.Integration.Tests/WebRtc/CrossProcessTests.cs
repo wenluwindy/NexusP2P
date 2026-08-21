@@ -342,9 +342,9 @@ public sealed class CrossProcessTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
-    public async Task 用文件码加密钥也能接收()
+    public async Task 只用文件码就能接收()
     {
-        // 用户可能只口头念了码，密钥另外发。两条路径都要能用。
+        // V3 的核心承诺：用户只念九位码，不必转述任何密钥。
         var sourceDirectory = CreateTemporaryDirectory();
         var destination = CreateTemporaryDirectory();
         var sourceFile = Path.Combine(sourceDirectory, "payload.bin");
@@ -355,9 +355,9 @@ public sealed class CrossProcessTests : IAsyncLifetime, IDisposable
         try
         {
             var code = await WaitForPatternAsync(sender, @"文件码：([\d-]+)", TimeSpan.FromSeconds(60));
-            var key = await WaitForPatternAsync(sender, @"密钥：(\S+)", TimeSpan.FromSeconds(10));
 
-            var receiver = StartCli("receive", code, "--key", key, "--dest", destination);
+            // 刻意不给任何密钥参数 —— 给了也没有这个选项了
+            var receiver = StartCli("receive", code, "--dest", destination);
 
             var receiverExit = await WaitForExitAsync(receiver, TimeSpan.FromSeconds(120));
             Assert.True(receiverExit == 0, Report(receiverExit, sender, receiver));
@@ -374,12 +374,37 @@ public sealed class CrossProcessTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task 发送端不再把密钥打到屏幕上()
+    {
+        // 密钥出现在输出里就意味着它仍然是「用户要转述的东西」，
+        // 而 V3 的整个意义就是把它从人的手里拿走。
+        var sourceDirectory = CreateTemporaryDirectory();
+        var sourceFile = Path.Combine(sourceDirectory, "payload.bin");
+        WriteRandomFile(sourceFile, 10_000);
+
+        var sender = StartCli("send", sourceFile);
+
+        try
+        {
+            await WaitForPatternAsync(sender, @"文件码：([\d-]+)", TimeSpan.FromSeconds(60));
+
+            Assert.DoesNotContain("密钥", sender.Text, StringComparison.Ordinal);
+
+            // 分享链接也不该再带 # 片段
+            Assert.DoesNotContain("#", sender.Text, StringComparison.Ordinal);
+        }
+        finally
+        {
+            KillIfRunning(sender);
+        }
+    }
+
+    [Fact]
     public async Task 接收端用错的码会快速失败()
     {
         var destination = CreateTemporaryDirectory();
-        var key = new string('A', 43);   // 长度合法但内容无关紧要
 
-        var receiver = StartCli("receive", "000-000-001", "--key", key, "--dest", destination);
+        var receiver = StartCli("receive", "000-000-001", "--dest", destination);
 
         var exitCode = await WaitForExitAsync(receiver, TimeSpan.FromSeconds(60));
 

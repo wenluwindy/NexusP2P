@@ -31,7 +31,7 @@ public sealed class WebRtcEndToEndTests
         await using var source = new MemoryPieceSource(manifest, harness.Files);
 
         var sender = new SendSession(manifest, source, harness.Secret);
-        var receiver = new ReceiveSession(harness.Secret, destination);
+        var receiver = new ReceiveSession(destination);
 
         Exception? senderError = null;
         Exception? receiverError = null;
@@ -188,7 +188,7 @@ public sealed class WebRtcEndToEndTests
     }
 
     [Fact]
-    public async Task 密钥不对时在真实_WebRTC_上也明确报错()
+    public async Task 密钥要约与清单不匹配时在真实_WebRTC_上也明确报错()
     {
         using var harness = new TransferHarness().With("a.bin", 20_000);
         var destination = harness.CreateTemporaryDirectory();
@@ -197,22 +197,29 @@ public sealed class WebRtcEndToEndTests
         await using var pair = await LoopbackPeerPair.ConnectAsync();
         await using var senderConnection = new ProtocolConnection(pair.Offerer);
         await using var receiverConnection = new ProtocolConnection(pair.Answerer);
-        await using var source = new MemoryPieceSource(manifest, harness.Files);
 
         var senderTask = Task.Run(async () =>
         {
             try
             {
-                await new SendSession(manifest, source, harness.Secret).RunAsync(senderConnection);
+                // 推一把密钥，却用另一把密封清单
+                await senderConnection.SendAsync(
+                    MessageType.KeyOffer,
+                    new KeyOfferPayload(TransferSecret.Generate()).Serialize());
+
+                var manifestKey = NexusP2P.Core.Crypto.KeyDerivation.DeriveManifestKey(harness.Secret);
+                await senderConnection.SendAsync(
+                    MessageType.Manifest,
+                    NexusP2P.Core.Crypto.BlobCipher.Seal(manifestKey, manifest.Serialize()));
             }
             catch
             {
-                // 对端会因密钥不对报错并关闭
+                // 对端会报错并关闭
             }
         }, CancellationToken.None);
 
         var failure = await Assert.ThrowsAsync<TransferFailedException>(
-            () => new ReceiveSession(TransferSecret.Generate(), destination).RunAsync(receiverConnection));
+            () => new ReceiveSession(destination).RunAsync(receiverConnection));
 
         Assert.Equal(TransferErrorCode.InvalidManifest, failure.Code);
         await senderTask;
@@ -253,7 +260,7 @@ public sealed class WebRtcEndToEndTests
 
         await Task.WhenAll(
             Task.Run(() => new SendSession(manifest, source, harness.Secret).RunAsync(senderConnection)),
-            Task.Run(() => new ReceiveSession(harness.Secret, destination).RunAsync(receiverConnection)));
+            Task.Run(() => new ReceiveSession(destination).RunAsync(receiverConnection)));
 
         byte[][] frames;
         lock (gate)

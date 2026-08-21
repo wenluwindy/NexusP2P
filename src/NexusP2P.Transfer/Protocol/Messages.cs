@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using NexusP2P.Core.Crypto;
 
 namespace NexusP2P.Transfer.Protocol;
 
@@ -46,6 +47,39 @@ public readonly record struct PiecePayload(int FileIndex, long PieceIndex, ReadO
         }
 
         return new PiecePayload(fileIndex, pieceIndex, payload[HeaderSize..].ToArray());
+    }
+}
+
+/// <summary>
+/// 密钥要约（V3）：本次传输的 32 字节密钥材料，由发送方在通道建立后首先推送。
+///
+/// <para>载荷就是裸的 32 字节，没有任何头部 —— 长度是固定的，
+/// 而一个可变长度字段只会给攻击者多一个可以撒谎的地方。</para>
+///
+/// <para><b>不做任何混淆或二次加密。</b>这条消息的机密性完全依赖
+/// WebRTC 的 DTLS 层。在明文通道上自己加一层「看起来像加密」的东西，
+/// 只会让人误以为它比实际更安全 —— 密钥总得有个源头，
+/// 而真正的防线在 <see cref="MessageType.KeyOffer"/> 的注释里说明。</para>
+/// </summary>
+public readonly record struct KeyOfferPayload(TransferSecret Secret)
+{
+    /// <summary>载荷字节数，恒为密钥材料的长度。</summary>
+    public const int Size = TransferSecret.Size;
+
+    public byte[] Serialize() => Secret.ToArray();
+
+    public static KeyOfferPayload Parse(ReadOnlySpan<byte> payload)
+    {
+        // 长度必须精确匹配。多一个字节都当协议违规处理 ——
+        // 「宽容地只取前 32 字节」会让实现分歧静默地变成解密失败，
+        // 而那种失败在现场看起来像是「文件码不对」，极难排查。
+        if (payload.Length != Size)
+        {
+            throw new ProtocolException(
+                $"KeyOffer 消息必须是 {Size} 字节，实际为 {payload.Length} 字节。");
+        }
+
+        return new KeyOfferPayload(new TransferSecret(payload));
     }
 }
 

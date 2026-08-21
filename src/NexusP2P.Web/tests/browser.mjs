@@ -105,16 +105,18 @@ try {
     check(await page.locator('#settings-tab').evaluate(el => el.classList.contains('active')),
         '点「设置」切到了设置页');
 
-    console.log('分享链接路由：/r/<码>#<密钥> 应该自动填好并切到接收页');
+    console.log('分享链接路由：/r/<码> 应该自动填好并切到接收页');
     const code = '130226582';
-    const key = 'A'.repeat(43);
-    await page.goto(`${ORIGIN}/r/${code}#${key}`, { waitUntil: 'networkidle' });
+
+    // 带 #密钥 的旧链接也要能用 —— 片段被忽略，码照样填好
+    const legacyFragment = 'A'.repeat(43);
+    await page.goto(`${ORIGIN}/r/${code}#${legacyFragment}`, { waitUntil: 'networkidle' });
 
     check(await page.locator('#receive-tab').evaluate(el => el.classList.contains('active')),
         '自动切到了接收页');
     check(await page.locator('#receiveInput').inputValue() === '130-226-582',
         `文件码已填好并分组显示（实际「${await page.locator('#receiveInput').inputValue()}」）`);
-    check(await page.locator('#receiveKey').inputValue() === key, '密钥已从 fragment 填好');
+    check(await page.locator('#receiveKey').count() === 0, '密钥输入框已经不存在了（V3）');
 
     console.log('文件选择 → 清单计算（这一步会真的起 Worker 算 SHA-256）');
     await page.goto(ORIGIN, { waitUntil: 'networkidle' });

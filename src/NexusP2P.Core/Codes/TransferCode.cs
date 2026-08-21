@@ -12,8 +12,9 @@ namespace NexusP2P.Core.Codes;
 /// base32 之类更紧凑编码的唯一理由。10 亿种组合对「只有我和朋友用」
 /// 完全够，而且房间只在传输期间存在。</para>
 ///
-/// <para>码只承载房间号，<b>不承载密钥</b>。密钥走 URL fragment（见
-/// <see cref="ShareLink"/>），浏览器规范保证 fragment 永不发往服务器。</para>
+/// <para>码只承载房间号，<b>不承载密钥</b>。密钥由发送方在数据通道建立后
+/// 推给接收方（见 <c>MessageType.KeyOffer</c>），所以 V3 起<b>文件码是接收
+/// 一次传输的唯一凭证</b> —— 念给谁，谁就能收。</para>
 /// </summary>
 public readonly struct TransferCode : IEquatable<TransferCode>
 {

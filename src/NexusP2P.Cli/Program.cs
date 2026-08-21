@@ -114,12 +114,11 @@ internal static class CliApp
                 Console.WriteLine($"  文件码：{TransferCode.Parse(room.Code)}");
                 if (!string.IsNullOrEmpty(room.ShareUrlBase))
                 {
-                    Console.WriteLine($"  分享链接：{room.ShareUrlBase}/{room.Code}#{secret.ToBase64Url()}");
+                    Console.WriteLine($"  分享链接：{room.ShareUrlBase}/{room.Code}");
                 }
 
-                Console.WriteLine($"  密钥：{secret.ToBase64Url()}");
                 Console.WriteLine();
-                Console.WriteLine("等待对方接收…");
+                Console.WriteLine("把文件码念给对方即可。等待对方接收…");
             },
             onPeerArrived: () => Console.WriteLine("对方已进入，正在建立连接…"));
 
@@ -190,10 +189,8 @@ internal static class CliApp
                     Console.WriteLine($"  文件码：{TransferCode.Parse(room.Code)}");
                     if (!string.IsNullOrEmpty(room.ShareUrlBase))
                     {
-                        Console.WriteLine($"  分享链接：{room.ShareUrlBase}/{room.Code}#{secret.ToBase64Url()}");
+                        Console.WriteLine($"  分享链接：{room.ShareUrlBase}/{room.Code}");
                     }
-
-                    Console.WriteLine($"  密钥：{secret.ToBase64Url()}");
 
                     if (room.MaxReceivers < maxPeers)
                     {
@@ -265,30 +262,16 @@ internal static class CliApp
     private static async Task<int> ReceiveAsync(string[] args, CancellationToken cancellationToken)
     {
         var target = Positional(args, 1)
-                     ?? throw new ArgumentException("receive 需要一个分享链接，或用文件码加 --key。");
+                     ?? throw new ArgumentException("receive 需要一个分享链接或九位文件码。");
 
         var options = ReadAgentOptions(args);
         var destination = Option(args, "--dest") ?? Directory.GetCurrentDirectory();
 
-        string code;
-        TransferSecret secret;
-
-        if (ShareLinkFactory.TryParse(target, out var shareLink))
-        {
-            code = shareLink.Code.Digits;
-            secret = shareLink.Secret;
-        }
-        else
-        {
-            code = TransferCode.Parse(target).Digits;
-            var key = Option(args, "--key")
-                      ?? throw new ArgumentException("用文件码接收时必须同时给出 --key。");
-
-            if (!TransferSecret.TryFromBase64Url(key, out secret))
-            {
-                throw new ArgumentException("--key 不是合法的密钥。");
-            }
-        }
+        // V3：只要文件码。密钥由发送方在连上之后推过来，不再需要 --key。
+        // 分享链接仍然接受 —— 里面的 # 片段会被忽略。
+        var code = ShareLinkFactory.TryParse(target, out var shareLink)
+            ? shareLink.Code.Digits
+            : TransferCode.Parse(target).Digits;
 
         // 传输开始前就检查，而不是传到一半才发现目标不可写
         var check = DestinationCheck.Check(destination);
@@ -306,7 +289,7 @@ internal static class CliApp
             session: (connection, token) =>
             {
                 Console.WriteLine($"已连接（{Describe(peers.CandidateKind)}）。");
-                return new ReceiveSession(secret, destination)
+                return new ReceiveSession(destination)
                     .RunAsync(connection, new ProgressReporter(0), new RescanReporter(), token);
             },
             status: new ReconnectPrinter(),
@@ -427,18 +410,19 @@ internal static class CliApp
         用法：
           nexusp2p send <文件或文件夹> --signaling <地址>
           nexusp2p send <文件或文件夹> --max-peers 4 --signaling <地址>
-          nexusp2p receive <分享链接> --dest <目录> --signaling <地址>
-          nexusp2p receive <文件码> --key <密钥> --dest <目录> --signaling <地址>
+          nexusp2p receive <文件码或分享链接> --dest <目录> --signaling <地址>
 
         选项：
           --signaling <地址>   信令服务器，如 https://p2p.example.com
           --dest <目录>        接收目录，默认为当前目录
-          --key <密钥>         用文件码（而非完整链接）接收时的密钥
           --max-peers <人数>   同一个码最多允许几个人接收，默认 1。
                                大于 1 时进入一对多模式：接收方陆续进来
                                陆续传，Ctrl+C 结束守候。服务器可能压低上限。
           --exit-after <人数>  一对多模式下，收齐这么多人后自动结束
                                （不给则一直守到 Ctrl+C）。脚本化时用。
+
+        接收只需要九位文件码 —— 念给对方就行，不用再转述密钥。
+        密钥由发送方在连接建立后自动推送。
 
         信令地址来源，按优先级：
           1. --signaling 参数

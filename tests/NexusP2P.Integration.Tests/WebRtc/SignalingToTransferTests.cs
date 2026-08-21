@@ -105,7 +105,7 @@ public sealed class SignalingToTransferTests : IAsyncLifetime
 
                 await using var link = await PeerConnector.AnswerAsync(_options, code, timeout.Token);
 
-                result = await new ReceiveSession(harness.Secret, destination)
+                result = await new ReceiveSession(destination)
                     .RunAsync(link.Connection, cancellationToken: timeout.Token);
             }
             catch (Exception ex)
@@ -251,7 +251,7 @@ public sealed class SignalingToTransferTests : IAsyncLifetime
         {
             var code = await codeReady.Task.WaitAsync(timeout.Token);
             await using var link = await PeerConnector.AnswerAsync(_options, code, timeout.Token);
-            await new ReceiveSession(harness.Secret, destination)
+            await new ReceiveSession(destination)
                 .RunAsync(link.Connection, cancellationToken: timeout.Token);
         }, CancellationToken.None);
 

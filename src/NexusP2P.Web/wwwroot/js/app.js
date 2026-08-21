@@ -3,7 +3,7 @@
 // 这一层只负责「用户点了什么 → 调哪个流程 → 把状态显示出来」。
 // 协议与加密全在 core/ 与 transfer/ 里，与界面无关。
 
-import { formatCode, parseCode, parseSecret, parseShareLink, readShareLinkFromLocation }
+import { formatCode, parseCode, parseShareLink, readShareLinkFromLocation }
     from './core/codes.js';
 import { generateSecret } from './core/crypto.js';
 import { TransferManifest } from './core/manifest.js';
@@ -157,7 +157,7 @@ async function startSending() {
         link = await offer(signalingOrigin(), {
             onRoomCreated: room => {
                 state.link = room;
-                ui.showShareCode(room, state.secret);
+                ui.showShareCode(room);
             },
             onPeerArrived: () => ui.setSendStatus('对方已进入，正在建立连接…'),
             signal: state.abort.signal,
@@ -260,7 +260,7 @@ async function startSendingMany(maxPeers) {
             signalingOrigin(), state.manifest, state.files, state.secret, maxPeers, {
                 onRoomCreated: room => {
                     state.link = room;
-                    ui.showShareCode(room, state.secret);
+                    ui.showShareCode(room);
 
                     // 旧服务器不认识 maxReceivers（回显 1）：降级为一对一提醒用户
                     if (room.maxReceivers < maxPeers) {
@@ -309,8 +309,13 @@ async function startSendingMany(maxPeers) {
 
 // ---------------- 接收 ----------------
 
-/** 从输入框解析出房间码与密钥。支持完整链接、或码 + 单独的密钥。 */
-function resolveReceiveTarget(input, keyInput) {
+/**
+ * 从输入框解析出房间码。
+ *
+ * V3 起**不再需要密钥** —— 它由发送方在数据通道里推来。
+ * 分享链接（含带 `#密钥` 的旧链接）与九位码都接受。
+ */
+function resolveReceiveTarget(input) {
     const fromLink = parseShareLink(input);
     if (fromLink !== null) {
         return fromLink;
@@ -321,16 +326,11 @@ function resolveReceiveTarget(input, keyInput) {
         return { error: '这不是合法的分享链接，也不是九位文件码。' };
     }
 
-    const secret = parseSecret(keyInput.trim());
-    if (secret === null) {
-        return { error: '用文件码接收时必须同时填写密钥（分享链接里 # 后面那一串）。' };
-    }
-
-    return { code, secret };
+    return { code };
 }
 
-async function startReceiving(input, keyInput) {
-    const target = resolveReceiveTarget(input, keyInput);
+async function startReceiving(input) {
+    const target = resolveReceiveTarget(input);
     if (target.error !== undefined) {
         ui.notify(target.error, 'error');
         return;
@@ -353,7 +353,7 @@ async function startReceiving(input, keyInput) {
 
         const connection = new ProtocolConnection(link.channel);
 
-        const session = new ReceiveSession(target.secret, manifest => openWriterFor(manifest));
+        const session = new ReceiveSession(manifest => openWriterFor(manifest));
 
         const result = await session.run(connection, {
             signal: state.abort.signal,

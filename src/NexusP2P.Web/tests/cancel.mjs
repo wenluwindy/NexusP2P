@@ -159,7 +159,7 @@ console.log('ReceiveSession：等待清单时取消，run() 立刻退出');
     const connection = new ProtocolConnection(channel);
     const controller = new AbortController();
 
-    const run = new ReceiveSession(generateSecret(), () => {
+    const run = new ReceiveSession(() => {
         throw new Error('不应该走到这里 —— 清单还没收到');
     }).run(connection, { signal: controller.signal });
 

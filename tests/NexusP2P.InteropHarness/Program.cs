@@ -11,6 +11,9 @@ using NexusP2P.Transfer.Protocol;
 //
 // 用法：NexusP2P.InteropHarness receive <base64url 密钥> <落盘目录>
 //
+// V3 起接收端**不使用**那个密钥参数：密钥由发送方在通道里推来。
+// 参数位保留只是为了两端脚本的调用形状不变。
+//
 // **诊断信息一律走 stderr。** stdout 是协议通道，往里写一个字节就会把
 // 帧流搞乱，而症状会是「对端收到畸形帧」——完全指不到真正的原因。
 
@@ -59,11 +62,12 @@ catch (Exception ex)
 }
 
 async Task<int> ReceiveAsync(
-    ProtocolConnection connection, TransferSecret secret, string destination, CancellationToken token)
+    ProtocolConnection connection, TransferSecret unusedSecret, string destination, CancellationToken token)
 {
+    _ = unusedSecret;   // V3：密钥由对端在通道里推来
     Directory.CreateDirectory(destination);
 
-    var result = await new ReceiveSession(secret, destination).RunAsync(connection, cancellationToken: token);
+    var result = await new ReceiveSession(destination).RunAsync(connection, cancellationToken: token);
 
     // 结果走 stderr，让 Node 侧能读到又不污染协议通道
     await Console.Error.WriteLineAsync(

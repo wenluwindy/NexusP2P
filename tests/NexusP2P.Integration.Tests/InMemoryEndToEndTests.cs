@@ -253,10 +253,10 @@ public sealed class InMemoryEndToEndTests
         using var harness = new TransferHarness().With("a.bin", 40_000);
         var destination = harness.CreateTemporaryDirectory();
 
-        // 第 1 条是清单，之后是分片。挑几条分片消息损坏掉。
+        // 第 1 条是密钥要约，第 2 条是清单，之后是分片。挑几条分片消息损坏掉。
         var faults = new FaultProfile
         {
-            CorruptMessageOrdinals = new HashSet<long> { 3, 5, 8 },
+            CorruptMessageOrdinals = new HashSet<long> { 4, 6, 9 },
         };
 
         var run = await harness.RunAsync(destination, faults);
@@ -277,12 +277,12 @@ public sealed class InMemoryEndToEndTests
         using var harness = new TransferHarness().With("a.bin", 20_000);
         var destination = harness.CreateTemporaryDirectory();
 
-        // 序号 1 是清单，2~6 是 5 个分片。只坏分片 ——
+        // 序号 1 是密钥要约，2 是清单，3~7 是 5 个分片。只坏分片 ——
         // 把轮次边界的 PushComplete 也坏掉测的就是另一回事了（帧解析），
         // 不是这条用例要验证的东西。
         var faults = new FaultProfile
         {
-            CorruptMessageOrdinals = new HashSet<long> { 2, 3, 4, 5, 6 },
+            CorruptMessageOrdinals = new HashSet<long> { 3, 4, 5, 6, 7 },
         };
 
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -300,9 +300,10 @@ public sealed class InMemoryEndToEndTests
     // ---- 加密与安全 ----
 
     [Fact]
-    public async Task 密钥不对时接收端明确报错()
+    public async Task 密钥要约与清单不匹配时接收端明确报错()
     {
-        // 最常见的用户错误：只复制了 # 前面那一段
+        // V3 里用户不再输入密钥，所以「用户填错密钥」这个失败模式没有了。
+        // 剩下的是实现层面的不一致：对端推来的密钥与它密封清单用的不是同一把。
         using var sender = new TransferHarness().With("a.bin", 10_000);
         var manifest = await sender.BuildManifestAsync();
         var destination = sender.CreateTemporaryDirectory();
@@ -311,21 +312,25 @@ public sealed class InMemoryEndToEndTests
         await using var senderConnection = new NexusP2P.Transfer.Protocol.ProtocolConnection(pair.Left);
         await using var receiverConnection = new NexusP2P.Transfer.Protocol.ProtocolConnection(pair.Right);
 
-        await using var source = new MemoryPieceSource(manifest, sender.Files);
-        var sendSession = new SendSession(manifest, source, sender.Secret);
-
-        // 接收端拿到的是另一把密钥
-        var receiveSession = new ReceiveSession(TransferSecret.Generate(), destination);
+        var receiveSession = new ReceiveSession(destination);
 
         var senderTask = Task.Run(async () =>
         {
             try
             {
-                await sendSession.RunAsync(senderConnection);
+                // 推一把密钥，却用另一把密封清单
+                await senderConnection.SendAsync(
+                    NexusP2P.Transfer.Protocol.MessageType.KeyOffer,
+                    new NexusP2P.Transfer.Protocol.KeyOfferPayload(TransferSecret.Generate()).Serialize());
+
+                var manifestKey = NexusP2P.Core.Crypto.KeyDerivation.DeriveManifestKey(sender.Secret);
+                await senderConnection.SendAsync(
+                    NexusP2P.Transfer.Protocol.MessageType.Manifest,
+                    NexusP2P.Core.Crypto.BlobCipher.Seal(manifestKey, manifest.Serialize()));
             }
             catch
             {
-                // 对端会报错并关闭，发送端随之失败，这里不关心
+                // 对端会报错并关闭，这里不关心
             }
         });
 
@@ -333,7 +338,43 @@ public sealed class InMemoryEndToEndTests
             () => receiveSession.RunAsync(receiverConnection));
 
         Assert.Equal(NexusP2P.Transfer.Protocol.TransferErrorCode.InvalidManifest, failure.Code);
-        Assert.Contains("文件码", failure.Message, StringComparison.Ordinal);
+
+        await senderTask;
+    }
+
+    [Fact]
+    public async Task 对端不发密钥要约时接收端明确报错()
+    {
+        // 旧版发送方（V1/V2）会直接发 Manifest。这必须失败得清楚，
+        // 而不是让用户对着一个卡住的进度条猜。
+        using var sender = new TransferHarness().With("a.bin", 10_000);
+        var manifest = await sender.BuildManifestAsync();
+        var destination = sender.CreateTemporaryDirectory();
+
+        await using var pair = InMemoryDataChannelPair.Create();
+        await using var senderConnection = new NexusP2P.Transfer.Protocol.ProtocolConnection(pair.Left);
+        await using var receiverConnection = new NexusP2P.Transfer.Protocol.ProtocolConnection(pair.Right);
+
+        var senderTask = Task.Run(async () =>
+        {
+            try
+            {
+                var manifestKey = NexusP2P.Core.Crypto.KeyDerivation.DeriveManifestKey(sender.Secret);
+                await senderConnection.SendAsync(
+                    NexusP2P.Transfer.Protocol.MessageType.Manifest,
+                    NexusP2P.Core.Crypto.BlobCipher.Seal(manifestKey, manifest.Serialize()));
+            }
+            catch
+            {
+                // 对端会报错并关闭
+            }
+        });
+
+        var failure = await Assert.ThrowsAsync<TransferFailedException>(
+            () => new ReceiveSession(destination).RunAsync(receiverConnection));
+
+        Assert.Equal(NexusP2P.Transfer.Protocol.TransferErrorCode.ProtocolViolation, failure.Code);
+        Assert.Contains("旧版本", failure.Message, StringComparison.Ordinal);
 
         await senderTask;
     }
@@ -372,7 +413,7 @@ public sealed class InMemoryEndToEndTests
         await using var source = new MemoryPieceSource(manifest, harness.Files);
 
         var sendSession = new SendSession(manifest, source, harness.Secret);
-        var receiveSession = new ReceiveSession(harness.Secret, destination);
+        var receiveSession = new ReceiveSession(destination);
 
         await Task.WhenAll(
             Task.Run(() => sendSession.RunAsync(senderConnection)),

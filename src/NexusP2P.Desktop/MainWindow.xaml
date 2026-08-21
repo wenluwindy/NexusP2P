@@ -182,14 +182,10 @@
             <TabItem Header="接收">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
-                        <TextBlock Text="分享链接或九位文件码" Style="{StaticResource Caption}" />
-                        <TextBox x:Name="ReceiveInput" Margin="0,6,0,14"
-                                 TextChanged="OnReceiveInputChanged" />
-
-                        <TextBlock Text="密钥（粘贴完整分享链接时可留空）"
-                                   Style="{StaticResource Caption}" />
-                        <TextBox x:Name="ReceiveKey" Margin="0,6,0,14" FontFamily="{StaticResource MonoFont}"
-                                 FontSize="12" />
+                        <TextBlock Text="九位文件码或分享链接" Style="{StaticResource Caption}" />
+                        <TextBox x:Name="ReceiveInput" Margin="0,6,0,4" />
+                        <TextBlock Text="不需要密钥 —— 连上之后由发送方自动提供。"
+                                   Style="{StaticResource Caption}" Margin="0,0,0,14" />
 
                         <TextBlock Text="保存到" Style="{StaticResource Caption}" />
                         <Grid Margin="0,6,0,14">

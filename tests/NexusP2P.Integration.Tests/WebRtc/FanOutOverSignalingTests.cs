@@ -115,7 +115,7 @@ public sealed class FanOutOverSignalingTests : IAsyncLifetime
                 var code = await codeReady.Task.WaitAsync(timeout.Token);
                 await using var link = await PeerConnector.AnswerAsync(_options, code, timeout.Token);
 
-                results[i] = await new ReceiveSession(harness.Secret, destinations[i])
+                results[i] = await new ReceiveSession(destinations[i])
                     .RunAsync(link.Connection, cancellationToken: timeout.Token);
             }
             catch (Exception ex)
@@ -199,7 +199,7 @@ public sealed class FanOutOverSignalingTests : IAsyncLifetime
         var firstTask = Task.Run(async () =>
         {
             await using var link = await PeerConnector.AnswerAsync(_options, code, timeout.Token);
-            return await new ReceiveSession(harness.Secret, destination)
+            return await new ReceiveSession(destination)
                 .RunAsync(link.Connection, cancellationToken: timeout.Token);
         }, CancellationToken.None);
 

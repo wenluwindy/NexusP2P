@@ -10,7 +10,9 @@
 import { MessageType } from '../core/frame.js';
 import { deriveManifestKey, PieceCipher, sealBlob } from '../core/crypto.js';
 import { PieceLocator } from '../core/locator.js';
-import { PieceBitfield, parseError, serializePiece, TransferErrorCode } from '../core/messages.js';
+import {
+    PieceBitfield, parseError, serializeKeyOffer, serializePiece, TransferErrorCode,
+} from '../core/messages.js';
 
 /** 最多来回几轮。每轮要么有进展要么直接报错，所以这只是防御性上限。 */
 const MAX_ROUNDS = 8;
@@ -63,6 +65,12 @@ export class SendSession {
     }
 
     async _runCore(connection, onProgress, signal) {
+        // 0. 密钥要约（V3）。必须排在清单之前 —— 接收方没有密钥就解不开清单。
+        //
+        // 这条消息就是「只输入文件码即可接收」的全部实现：密钥不再由用户
+        // 转述，而是在 DTLS 通道内直接推给对方。
+        await connection.send(MessageType.KeyOffer, serializeKeyOffer(this._secret), false);
+
         // 1. 清单。用 manifestKey 密封 —— 文件名本身就是隐私。
         const manifestKey = await deriveManifestKey(this._secret);
         const sealed = await sealBlob(manifestKey, this._manifest.serialize());

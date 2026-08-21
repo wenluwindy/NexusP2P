@@ -57,7 +57,7 @@ public sealed class FanOutEndToEndTests : IDisposable
         try
         {
             var receiverTasks = ends.Select(end => Task.Run(async () =>
-                await new ReceiveSession(_harness.Secret, end.Destination)
+                await new ReceiveSession(end.Destination)
                     .RunAsync(end.ReceiverSide))).ToArray();
 
             var linkTasks = ends.Select(end =>
@@ -113,7 +113,7 @@ public sealed class FanOutEndToEndTests : IDisposable
             {
                 try
                 {
-                    await new ReceiveSession(_harness.Secret, end.Destination)
+                    await new ReceiveSession(end.Destination)
                         .RunAsync(end.ReceiverSide);
                 }
                 catch (Exception)
@@ -164,7 +164,7 @@ public sealed class FanOutEndToEndTests : IDisposable
             {
                 try
                 {
-                    await new ReceiveSession(_harness.Secret, destination)
+                    await new ReceiveSession(destination)
                         .RunAsync(broken.ReceiverSide);
                 }
                 catch (Exception)
@@ -191,7 +191,7 @@ public sealed class FanOutEndToEndTests : IDisposable
             ReceiveResult? result = null;
             var receiverTask = Task.Run(async () =>
             {
-                result = await new ReceiveSession(_harness.Secret, destination)
+                result = await new ReceiveSession(destination)
                     .RunAsync(fresh.ReceiverSide);
             });
 
@@ -223,7 +223,7 @@ public sealed class FanOutEndToEndTests : IDisposable
         try
         {
             var receiverTask = Task.Run(async () =>
-                await new ReceiveSession(_harness.Secret, first.Destination)
+                await new ReceiveSession(first.Destination)
                     .RunAsync(first.ReceiverSide));
             var linkTask = fanOut.RunLinkAsync("dup", first.SenderSide);
 
@@ -260,7 +260,7 @@ public sealed class FanOutEndToEndTests : IDisposable
         try
         {
             var receiverTask = Task.Run(async () =>
-                await new ReceiveSession(_harness.Secret, end.Destination)
+                await new ReceiveSession(end.Destination)
                     .RunAsync(end.ReceiverSide));
 
             await AwaitWithDeadline(Task.WhenAll(
@@ -299,7 +299,7 @@ public sealed class FanOutEndToEndTests : IDisposable
         try
         {
             var receiverTasks = ends.Select(end => Task.Run(async () =>
-                await new ReceiveSession(_harness.Secret, end.Destination)
+                await new ReceiveSession(end.Destination)
                     .RunAsync(end.ReceiverSide))).ToArray();
 
             var linkTasks = ends.Select(end =>

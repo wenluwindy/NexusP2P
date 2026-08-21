@@ -225,18 +225,6 @@ public partial class MainWindow : Window, IDisposable
 
     // ---------------- 接收 ----------------
 
-    private void OnReceiveInputChanged(object sender, TextChangedEventArgs e)
-    {
-        // 粘贴完整分享链接时密钥已经在里面了，把密钥框灰掉省得用户以为漏填了
-        var hasLink = ReceiveInput.Text.Contains('#', StringComparison.Ordinal);
-        ReceiveKey.IsEnabled = !hasLink;
-
-        if (hasLink)
-        {
-            ReceiveKey.Text = string.Empty;
-        }
-    }
-
     private void OnPickFolderForReceive(object sender, RoutedEventArgs e)
     {
         var dialog = new OpenFolderDialog
@@ -261,7 +249,7 @@ public partial class MainWindow : Window, IDisposable
         var target = ReceiveInput.Text.Trim();
         if (target.Length == 0)
         {
-            ShowWarning("请先填入分享链接或九位文件码。");
+            ShowWarning("请先填入九位文件码或分享链接。");
             return;
         }
 
@@ -276,10 +264,7 @@ public partial class MainWindow : Window, IDisposable
         LandedPanel.Visibility = Visibility.Collapsed;
         ReceiveProgressPanel.Visibility = Visibility.Visible;
 
-        _ = _manager.StartReceiveAsync(
-            target,
-            ReceiveKey.IsEnabled ? ReceiveKey.Text : null,
-            _settings.EffectiveReceiveDirectory);
+        _ = _manager.StartReceiveAsync(target, _settings.EffectiveReceiveDirectory);
     }
 
     private void OnOpenReceiveFolder(object sender, RoutedEventArgs e)

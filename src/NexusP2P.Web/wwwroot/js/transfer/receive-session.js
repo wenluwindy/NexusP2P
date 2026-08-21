@@ -1,7 +1,11 @@
 // 接收端状态机。对应 C# 的 ReceiveSession。
 //
-// 流程：收清单 → **校验路径安全** → 回发位图 → 逐分片解密校验后落盘
-//      → 全齐后落地并通知对端。
+// 流程：**收密钥要约** → 收清单 → **校验路径安全** → 回发位图
+//      → 逐分片解密校验后落盘 → 全齐后落地并通知对端。
+//
+// 接收方不再需要预先知道密钥（V3）。密钥由发送方在通道建立后作为首条消息
+// 推来，所以用户只要输入九位文件码 —— 「密钥怎么念给对方」这个实际上无解的
+// 问题就从产品里去掉了。代价是信令服务器若主动做中间人就能拿到密钥。
 //
 // 清单是不可信输入。任一路径非法就整体拒绝并报错，不做部分接受 ——
 // 部分接受既让用户困惑，也给攻击者留了「混一条恶意路径进去」的空间。
@@ -16,7 +20,9 @@ import { deriveManifestKey, openBlob, PieceCipher } from '../core/crypto.js';
 import { hashPiece } from '../core/hashing.js';
 import { PieceLocator } from '../core/locator.js';
 import { TransferManifest } from '../core/manifest.js';
-import { PieceBitfield, parseError, parsePiece, TransferErrorCode } from '../core/messages.js';
+import {
+    PieceBitfield, parseError, parseKeyOffer, parsePiece, TransferErrorCode,
+} from '../core/messages.js';
 import { TransferFailedError } from './send-session.js';
 
 /** 允许连续拒收多少个分片后放弃。防止「对端一直发垃圾」变成无限循环。 */
@@ -27,13 +33,11 @@ const MAX_ROUNDS = 8;
 
 export class ReceiveSession {
     /**
-     * @param secret 从分享链接或用户输入拿到的密钥材料
      * @param openWriter 收到清单后调用，(manifest) => writer。
      *   延迟到这一刻才建 writer，因为要先知道文件数与总大小才能选策略、
      *   也才能把「当前策略能收多大」如实告诉用户。
      */
-    constructor(secret, openWriter) {
-        this._secret = secret;
+    constructor(openWriter) {
         this._openWriter = openWriter;
     }
 
@@ -48,6 +52,8 @@ export class ReceiveSession {
     }
 
     async _runCore(connection, onProgress, onManifest, signal) {
+        this._secret = await this._receiveKeyOffer(connection, signal);
+
         const manifest = await this._receiveManifest(connection, signal);
         onManifest?.(manifest);
 
@@ -116,6 +122,40 @@ export class ReceiveSession {
         }
     }
 
+    /**
+     * 收下密钥要约（V3 的第一步）。
+     *
+     * 它**必须是第一条消息**。顺序在协议里是硬性的而不是约定俗成：
+     * 密钥晚于清单到达的话，清单在到手的那一刻就解不开，
+     * 而「先缓存住等密钥来」会给攻击者一个免费的内存占用面。
+     */
+    async _receiveKeyOffer(connection, signal) {
+        const message = await connection.receive(signal);
+
+        if (message.type === MessageType.Error) {
+            const error = parseError(message.payload);
+            throw new TransferFailedError(error.code, `对端报错：${error.message}`);
+        }
+
+        if (message.type !== MessageType.KeyOffer) {
+            // 旧版发送方（V1/V2）会直接发 Manifest。给一句能指向真正原因的话 ——
+            // 「期望 KeyOffer 实际 Manifest」只有开发者看得懂。
+            const reason = message.type === MessageType.Manifest
+                ? '对方用的是旧版本，它仍然需要你手动输入密钥。请让对方升级到新版本。'
+                : `期望首条消息是 KeyOffer，实际收到 ${message.type}。`;
+
+            await connection.sendErrorAndClose(TransferErrorCode.ProtocolViolation, reason);
+            throw new TransferFailedError(TransferErrorCode.ProtocolViolation, reason);
+        }
+
+        try {
+            return parseKeyOffer(message.payload);
+        } catch (error) {
+            await connection.sendErrorAndClose(TransferErrorCode.ProtocolViolation, error.message);
+            throw new TransferFailedError(TransferErrorCode.ProtocolViolation, error.message);
+        }
+    }
+
     async _receiveManifest(connection, signal) {
         const message = await connection.receive(signal);
 
@@ -136,9 +176,10 @@ export class ReceiveSession {
         try {
             plaintext = await openBlob(manifestKey, message.payload);
         } catch {
-            // 最常见的原因是密钥不对 —— 用户可能少复制了 # 后面那一段
-            const reason = '清单解密失败，很可能是文件码或密钥不匹配。' +
-                '如果你是手工输入的，请确认密钥完整（# 后面那一长串）。';
+            // V3 里密钥是对端刚推过来的，所以这已经不可能是「用户填错密钥」了。
+            // 能走到这里说明对端的密钥与它自己密封清单用的不是同一把 ——
+            // 要么实现有 bug，要么中间有人改过字节。
+            const reason = '清单解密失败。对方的实现可能有问题，或数据在途中被篡改。';
             await connection.sendErrorAndClose(TransferErrorCode.InvalidManifest, reason);
             throw new TransferFailedError(TransferErrorCode.InvalidManifest, reason);
         }

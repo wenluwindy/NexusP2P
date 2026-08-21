@@ -28,13 +28,19 @@ public sealed record ReceiveResult(
 /// <summary>
 /// 接收端状态机。
 ///
-/// <para>流程：收清单 → <b>校验路径安全</b> → 查本地 <c>.part</c> 决定已有进度
-/// → 回发位图 → 逐分片解密校验后落盘 → 全齐后整体根校验并落到最终路径 → 通知对端。</para>
+/// <para>流程：<b>收密钥要约</b> → 收清单 → <b>校验路径安全</b> → 查本地 <c>.part</c>
+/// 决定已有进度 → 回发位图 → 逐分片解密校验后落盘 → 全齐后整体根校验并落到最终路径
+/// → 通知对端。</para>
+///
+/// <para><b>接收方不再需要预先知道密钥</b>（V3）。密钥由发送方在通道建立后
+/// 作为首条消息推来，所以用户只要输入九位文件码。这把「密钥怎么念给对方」
+/// 这个实际上无解的问题从产品里去掉了 —— 代价是信令服务器若主动做中间人
+/// 就能拿到密钥（见 <see cref="MessageType.KeyOffer"/>）。</para>
 ///
 /// <para><b>清单是不可信输入</b>。任一路径非法就整体拒绝并报错，不做部分接受 ——
 /// 部分接受既让用户困惑，也给攻击者留了「混一条恶意路径进去」的空间。</para>
 /// </summary>
-public sealed class ReceiveSession(TransferSecret secret, string destinationRoot)
+public sealed class ReceiveSession(string destinationRoot)
 {
     private readonly string _destinationRoot = !string.IsNullOrWhiteSpace(destinationRoot)
         ? destinationRoot
@@ -75,7 +81,8 @@ public sealed class ReceiveSession(TransferSecret secret, string destinationRoot
         IProgress<RescanProgress>? rescanProgress,
         CancellationToken cancellationToken)
     {
-        var manifest = await ReceiveManifestAsync(connection, cancellationToken).ConfigureAwait(false);
+        var secret = await ReceiveKeyOfferAsync(connection, cancellationToken).ConfigureAwait(false);
+        var manifest = await ReceiveManifestAsync(connection, secret, cancellationToken).ConfigureAwait(false);
 
         PieceStore store;
         try
@@ -122,7 +129,7 @@ public sealed class ReceiveSession(TransferSecret secret, string destinationRoot
 
                 var before = store.Bitfield.SetCount;
 
-                await ReceivePiecesAsync(connection, store, manifest, progress, cancellationToken)
+                await ReceivePiecesAsync(connection, store, manifest, secret, progress, cancellationToken)
                     .ConfigureAwait(false);
 
                 if (store.Bitfield.SetCount == before)
@@ -163,8 +170,53 @@ public sealed class ReceiveSession(TransferSecret secret, string destinationRoot
         }
     }
 
-    private async Task<TransferManifest> ReceiveManifestAsync(
+    /// <summary>
+    /// 收下密钥要约（V3 的第一步）。
+    ///
+    /// <para><b>它必须是第一条消息。</b>顺序在协议里是硬性的而不是约定俗成：
+    /// 密钥晚于清单到达的话，清单在到手的那一刻就解不开，
+    /// 而「先缓存住等密钥来」会给攻击者一个免费的内存占用面。</para>
+    /// </summary>
+    private static async Task<TransferSecret> ReceiveKeyOfferAsync(
         ProtocolConnection connection, CancellationToken cancellationToken)
+    {
+        var message = await connection.ReceiveAsync(cancellationToken).ConfigureAwait(false);
+
+        if (message.Type == MessageType.Error)
+        {
+            var error = ErrorPayload.Parse(message.Payload.Span);
+            throw new TransferFailedException(error.Code, $"对端报错：{error.Message}");
+        }
+
+        if (message.Type != MessageType.KeyOffer)
+        {
+            // 旧版发送方（V1/V2）会直接发 Manifest。给一句能指向真正原因的话 ——
+            // 「期望 KeyOffer 实际 Manifest」只有开发者看得懂。
+            var reason = message.Type == MessageType.Manifest
+                ? "对方用的是旧版本，它仍然需要你手动输入密钥。请让对方升级到新版本。"
+                : $"期望首条消息是 KeyOffer，实际收到 {message.Type}。";
+
+            await connection
+                .SendErrorAndCloseAsync(TransferErrorCode.ProtocolViolation, reason)
+                .ConfigureAwait(false);
+            throw new TransferFailedException(TransferErrorCode.ProtocolViolation, reason);
+        }
+
+        try
+        {
+            return KeyOfferPayload.Parse(message.Payload.Span).Secret;
+        }
+        catch (ProtocolException ex)
+        {
+            await connection
+                .SendErrorAndCloseAsync(TransferErrorCode.ProtocolViolation, ex.Message)
+                .ConfigureAwait(false);
+            throw new TransferFailedException(TransferErrorCode.ProtocolViolation, ex.Message);
+        }
+    }
+
+    private static async Task<TransferManifest> ReceiveManifestAsync(
+        ProtocolConnection connection, TransferSecret secret, CancellationToken cancellationToken)
     {
         var message = await connection.ReceiveAsync(cancellationToken).ConfigureAwait(false);
 
@@ -192,8 +244,10 @@ public sealed class ReceiveSession(TransferSecret secret, string destinationRoot
         }
         catch (BlobAuthenticationException ex)
         {
-            // 最常见的原因是文件码里的密钥不对 —— 用户可能少复制了 # 后面那一段
-            var reason = $"清单解密失败，很可能是文件码不匹配：{ex.Message}";
+            // V3 里密钥是对端刚推过来的，所以这已经不可能是「用户填错密钥」了。
+            // 能走到这里说明对端的密钥与它自己密封清单用的不是同一把 ——
+            // 要么实现有 bug，要么中间有人改过字节。
+            var reason = $"清单解密失败：{ex.Message}。对方的实现可能有问题，或数据在途中被篡改。";
             await connection
                 .SendErrorAndCloseAsync(TransferErrorCode.InvalidManifest, reason)
                 .ConfigureAwait(false);
@@ -219,6 +273,7 @@ public sealed class ReceiveSession(TransferSecret secret, string destinationRoot
         ProtocolConnection connection,
         PieceStore store,
         TransferManifest manifest,
+        TransferSecret secret,
         IProgress<TransferProgress>? progress,
         CancellationToken cancellationToken)
     {

@@ -10,9 +10,10 @@ import { ProtocolConnection } from '../wwwroot/js/transfer/connection.js';
 import { ReceiveSession } from '../wwwroot/js/transfer/receive-session.js';
 import { SendSession } from '../wwwroot/js/transfer/send-session.js';
 import { buildManifest } from '../wwwroot/js/transfer/manifest-builder.js';
-import { generateSecret } from '../wwwroot/js/core/crypto.js';
+import { generateSecret, deriveManifestKey, sealBlob } from '../wwwroot/js/core/crypto.js';
 import { MerkleParameters } from '../wwwroot/js/core/manifest.js';
-import { SAFE_MAX_MESSAGE_SIZE } from '../wwwroot/js/core/frame.js';
+import { MessageType, SAFE_MAX_MESSAGE_SIZE } from '../wwwroot/js/core/frame.js';
+import { serializeKeyOffer } from '../wwwroot/js/core/messages.js';
 
 /**
  * 一条内存数据通道，接口与 net/peer.js 的 DataChannel 一致。
@@ -190,7 +191,7 @@ async function transfer(files, { senderFault = null, parameters } = {}) {
     const [senderChannel, receiverChannel] = LoopbackChannel.pair(senderFault);
 
     let writer = null;
-    const receive = new ReceiveSession(secret, m => {
+    const receive = new ReceiveSession(m => {
         writer = new MemoryWriter(m);
         return writer;
     }).run(new ProtocolConnection(receiverChannel));
@@ -288,7 +289,7 @@ console.log('默认参数（64 KiB 叶子 / 1 MiB 分片）下的较大文件');
     check(bytesEqual(writer.buffers[0], files[0].data), '2.5 MiB 内容逐字节一致');
 }
 
-console.log('密钥不对时明确报错，而不是收到垃圾');
+console.log('密钥要约与清单不匹配时明确报错，而不是收到垃圾');
 {
     const files = [fakeFile('a.bin', 5000, 7)];
     const merkle = new MerkleParameters(1024, 4096);
@@ -296,17 +297,51 @@ console.log('密钥不对时明确报错，而不是收到垃圾');
 
     const [senderChannel, receiverChannel] = LoopbackChannel.pair();
 
-    const receive = new ReceiveSession(generateSecret(), m => new MemoryWriter(m))
+    const receive = new ReceiveSession(m => new MemoryWriter(m))
         .run(new ProtocolConnection(receiverChannel));
 
-    const send = new SendSession(manifest, [files[0].file], generateSecret())
-        .run(new ProtocolConnection(senderChannel));
+    // V3：发送方推的密钥就是它自己用的那把，所以要制造不匹配得手工发。
+    // 这里直接用一个「推一把、用另一把」的发送方替身。
+    const send = (async () => {
+        const connection = new ProtocolConnection(senderChannel);
+        await connection.send(MessageType.KeyOffer, serializeKeyOffer(generateSecret()), false);
+
+        const manifestKey = await deriveManifestKey(generateSecret());
+        await connection.send(
+            MessageType.Manifest, await sealBlob(manifestKey, manifest.serialize()), false);
+    })();
 
     const outcomes = await Promise.allSettled([send, receive]);
     const receiveError = outcomes[1].status === 'rejected' ? outcomes[1].reason.message : '';
 
     check(outcomes[1].status === 'rejected', '接收端拒绝了这次传输');
-    check(receiveError.includes('清单解密失败'), `错误信息指向密钥不匹配：「${receiveError.slice(0, 30)}…」`);
+    check(receiveError.includes('清单解密失败'), `错误信息指向解密失败：「${receiveError.slice(0, 30)}…」`);
+}
+
+console.log('对端不发密钥要约时明确报错');
+{
+    const files = [fakeFile('a.bin', 5000, 7)];
+    const merkle = new MerkleParameters(1024, 4096);
+    const manifest = await buildManifest([files[0].file], { parameters: merkle });
+
+    const [senderChannel, receiverChannel] = LoopbackChannel.pair();
+
+    const receive = new ReceiveSession(m => new MemoryWriter(m))
+        .run(new ProtocolConnection(receiverChannel));
+
+    // 旧版发送方（V1/V2）会直接发 Manifest
+    const send = (async () => {
+        const connection = new ProtocolConnection(senderChannel);
+        const manifestKey = await deriveManifestKey(generateSecret());
+        await connection.send(
+            MessageType.Manifest, await sealBlob(manifestKey, manifest.serialize()), false);
+    })();
+
+    const outcomes = await Promise.allSettled([send, receive]);
+    const receiveError = outcomes[1].status === 'rejected' ? outcomes[1].reason.message : '';
+
+    check(outcomes[1].status === 'rejected', '接收端拒绝了这次传输');
+    check(receiveError.includes('旧版本'), `错误信息指向对方版本过旧：「${receiveError.slice(0, 30)}…」`);
 }
 
 console.log();

@@ -57,7 +57,7 @@ NexusP2P 把这一步删掉了。
 ### 安全
 - **AES-256-GCM** 内容加密，分片位置参与 nonce 派生
 - **SHA-256 Merkle 树**，分片级完整性校验
-- **密钥藏在 URL `#fragment`**，永不发往服务器
+- **密钥由发送方在加密通道内推送**，接收方只需九位文件码
 - **路径穿越防护**，接收端强制校验清单路径
 - **零信任中继**：即使走 TURN，中继方也只看到密文
 
@@ -104,10 +104,12 @@ NexusP2P 把这一步删掉了。
 ### 三步传一个文件
 
 ```
-1. 发送方   拖入文件  ──►  拿到九位文件码 + 分享链接
-2. 传给对方  把链接（含 #密钥）发过去
-3. 接收方   打开链接，选目录  ──►  开始直连传输
+1. 发送方   拖入文件  ──►  拿到九位文件码
+2. 传给对方  把码念给对方（或发分享链接）
+3. 接收方   输入码，选目录  ──►  开始直连传输
 ```
+
+> 只需要文件码 —— 没有密钥要转述。密钥在连接建立后由发送方自动送达。
 
 ### 环境要求
 
@@ -138,10 +140,10 @@ dotnet run --project src/NexusP2P.Cli -- send .\example.iso `
 </details>
 
 <details>
-<summary><b>接收：使用分享链接</b></summary>
+<summary><b>接收：使用九位文件码</b></summary>
 
 ```powershell
-dotnet run --project src/NexusP2P.Cli -- receive "https://p2p.example.com/123456789#密钥" `
+dotnet run --project src/NexusP2P.Cli -- receive 123-456-789 `
   --dest .\downloads `
   --signaling https://p2p.example.com
 ```
@@ -149,11 +151,10 @@ dotnet run --project src/NexusP2P.Cli -- receive "https://p2p.example.com/123456
 </details>
 
 <details>
-<summary><b>接收：使用文件码 + 密钥</b></summary>
+<summary><b>接收：使用分享链接</b></summary>
 
 ```powershell
-dotnet run --project src/NexusP2P.Cli -- receive 123456789 `
-  --key "密钥" `
+dotnet run --project src/NexusP2P.Cli -- receive "https://p2p.example.com/r/123456789" `
   --dest .\downloads `
   --signaling https://p2p.example.com
 ```
@@ -180,8 +181,12 @@ flowchart LR
 
 信令服务器**只**传递建立连接所需的协商信息，不接触任何文件字节。
 
-分享链接的密钥位于 URL 的 `#fragment` 中 —— 按照 HTTP 规范，fragment 不会随请求发送到服务端。
-因此即使连接被迫降级为 TURN 中继，服务器也**没有解密文件的能力**。
+文件数据在两端之间用 AES-256-GCM 加密，即使连接降级为 TURN 中继，
+中继方看到的也只是密文。密钥由发送方在 WebRTC 的加密数据通道内送达接收方 ——
+用户因此只需要转述九位文件码。
+
+> **请使用你信任的信令服务器。** 密钥经由该服务器协商的连接传递，
+> 一个恶意的信令服务器有能力在协商阶段做中间人。被动记录流量则无法解密。
 
 <details>
 <summary><b>连接建立的三级回退</b></summary>
@@ -315,11 +320,15 @@ NexusP2P/
 
 我们更愿意把话说清楚，而不是含糊地写「军工级加密」：
 
-- ✔ 服务端不保存文件字节，也**不具备**解密能力
+- ✔ 服务端不保存文件字节
 - ✔ 文件内容使用 AES-256-GCM，分片位置参与 nonce 派生，收到的数据还要过 Merkle 校验
 - ✔ 接收端校验清单中的每一条路径，防止写出目标目录
-- ✔ TURN 中继只能看到流量元数据，没有密钥，读不到内容
-- ⚠ **分享链接中的 `#fragment` 就是密钥本体，请像密码一样对待完整链接**
+- ✔ TURN 中继只能看到流量元数据与密文，被动记录流量无法还原内容
+- ⚠ **文件码就是接收这次传输的唯一凭证** —— 念给谁，谁就能收，请像口令一样对待
+- ⚠ **请使用你信任的信令服务器**：密钥经由它协商的连接传递，恶意的信令服务器
+  有能力在协商阶段做中间人。这是「只念一串数字就能收」的代价 ——
+  在此之前密钥藏在 URL fragment 里，服务器在密码学上无法解密，但用户得转述
+  43 个字符的密钥，实际上没人做得到
 - ⚠ 信令房间与文件码**不是身份认证机制**，生产环境务必配合 HTTPS、限速与房间上限
 
 ---
