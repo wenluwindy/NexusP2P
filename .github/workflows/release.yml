@@ -60,14 +60,108 @@ jobs:
         shell: pwsh
         run: ./packaging/build-installer.ps1 -Version $env:NEXUSP2P_VERSION
 
+      # 产物交给最后的 release job 统一发布。分开上传是为了让
+      # Windows 与 Linux 两个 job 能并行跑，而 Release 仍然只有一个。
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/NexusP2P-Setup-*-win-x64.exe
+            dist/nexusp2p-win-x64.zip
+          if-no-files-found: error
+
+  linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      # 信令服务器是纯 ASP.NET Core，没有 Windows 专有 API，
+      # 所以在 Linux 上构建它本身就是一次跨平台验证。
+      - name: Build signaling server
+        run: dotnet build src/NexusP2P.Signaling --configuration Release --nologo
+
+      - name: Test
+        run: |
+          set -e
+          for project in \
+            tests/NexusP2P.Core.Tests/NexusP2P.Core.Tests.csproj \
+            tests/NexusP2P.Transfer.Tests/NexusP2P.Transfer.Tests.csproj \
+            tests/NexusP2P.Agent.Tests/NexusP2P.Agent.Tests.csproj; do
+            dotnet test "$project" --configuration Release --nologo
+          done
+
+      # Desktop.Tests 不在这里跑：它是 net9.0-windows，Linux 上根本还原不了。
+
+      - name: Build Linux packages
+        run: ./packaging/package.sh linux
+
+      # 自包含包必须真的能启动。这一步把「构建成功」变成「跑起来了」——
+      # 打包脚本本身在 Windows 上运行时给不出这个保证。
+      - name: Smoke test the self-contained binary
+        run: |
+          set -e
+          cd dist/nexusp2p-signaling-linux-x64
+          # PublicOrigin 缺失时服务会拒绝启动（刻意如此），所以要给一个
+          Signaling__PublicOrigin=https://example.com \
+            ./nexusp2p-signaling --urls http://127.0.0.1:5099 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+
+          for _ in $(seq 1 30); do
+            if curl -sf --max-time 2 http://127.0.0.1:5099/health >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          health=$(curl -sf --max-time 5 http://127.0.0.1:5099/health)
+          echo "health: $health"
+          echo "$health" | grep -q '"status":"ok"'
+
+          # V3：接收端只要文件码，页面上不该再有密钥输入框
+          page=$(curl -sf --max-time 5 http://127.0.0.1:5099/)
+          if echo "$page" | grep -q 'receiveKey'; then
+            echo "网页里仍然有密钥输入框，V3 资源没打进包" >&2
+            exit 1
+          fi
+
+          curl -sf --max-time 5 http://127.0.0.1:5099/js/core/frame.js | grep -q 'KeyOffer'
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/nexusp2p-signaling-linux-*.tar.gz
+          if-no-files-found: error
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [windows, linux]
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -lh dist
+
       - name: Create GitHub Release
-        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ github.ref_name }}" `
-            "dist/NexusP2P-Setup-$env:NEXUSP2P_VERSION-win-x64.exe" `
-            "dist/nexusp2p-win-x64.zip" `
-            --repo "${{ github.repository }}" `
-            --title "NexusP2P $env:NEXUSP2P_VERSION" `
+          gh release create "${{ github.ref_name }}" \
+            dist/* \
+            --repo "${{ github.repository }}" \
+            --title "NexusP2P ${GITHUB_REF_NAME#v}" \
             --generate-notes
