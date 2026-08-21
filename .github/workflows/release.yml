@@ -50,7 +50,7 @@ jobs:
 
       - name: Build portable Windows package
         shell: bash
-        run: ./packaging/package.sh win
+        run: bash ./packaging/package.sh win
 
       - name: Install Inno Setup
         shell: pwsh
@@ -100,8 +100,11 @@ jobs:
 
       # Desktop.Tests 不在这里跑：它是 net9.0-windows，Linux 上根本还原不了。
 
+      # 用 bash 显式调用而不是 ./packaging/package.sh：脚本的可执行位
+      # 是仓库里的文件模式，在 Windows 上很容易被改回 100644 而无人察觉，
+      # 那样这一步会以 Permission denied 失败 —— 与脚本本身无关。
       - name: Build Linux packages
-        run: ./packaging/package.sh linux
+        run: bash ./packaging/package.sh linux
 
       # 自包含包必须真的能启动。这一步把「构建成功」变成「跑起来了」——
       # 打包脚本本身在 Windows 上运行时给不出这个保证。
