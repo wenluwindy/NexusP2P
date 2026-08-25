@@ -5,6 +5,19 @@ namespace NexusP2P.Transfer.Tests.Storage;
 
 public sealed class PieceStoreTests
 {
+    /// <summary>
+    /// 同步投递的 IProgress。
+    ///
+    /// <para><see cref="Progress{T}"/> 在没有 SynchronizationContext 时把回调
+    /// 投到线程池，Report 返回时回调未必已经跑过 —— 断言「报告过没有」就成了
+    /// 和线程池调度赛跑，在 CI 这种负载高的机器上会随机失败（v2.2.0 的发布
+    /// 流水线就是这么挂掉的）。这里直接在调用线程上同步执行。</para>
+    /// </summary>
+    private sealed class SynchronousProgress<T>(Action<T> onReport) : IProgress<T>
+    {
+        public void Report(T value) => onReport(value);
+    }
+
     /// <summary>把整次传输灌完（按全局下标顺序），返回落地的文件路径。</summary>
     private static async Task<IReadOnlyList<string>> TransferAllAsync(
         PieceStore store, TransferFixture fixture, TransferManifest manifest)
@@ -225,7 +238,7 @@ public sealed class PieceStoreTests
         var root = fixture.CreateTemporaryDirectory();
 
         var rescanned = false;
-        var progress = new Progress<RescanProgress>(_ => rescanned = true);
+        var progress = new SynchronousProgress<RescanProgress>(_ => rescanned = true);
 
         await using var store = await PieceStore.OpenAsync(root, manifest, progress);
 
@@ -296,7 +309,7 @@ public sealed class PieceStoreTests
         }
 
         var rescanned = false;
-        var progress = new Progress<RescanProgress>(_ => rescanned = true);
+        var progress = new SynchronousProgress<RescanProgress>(_ => rescanned = true);
 
         await using var second = await PieceStore.OpenAsync(root, manifest, progress);
 
@@ -465,11 +478,10 @@ public sealed class PieceStoreTests
             await store.WritePieceAsync(i, fixture.Piece(manifest, location.FileIndex, location.LocalPieceIndex));
         }
 
-        // Progress<T> 在没有 SynchronizationContext 时会把回调投到线程池，
-        // 多次 Report 可能并发执行 —— 用非线程安全的容器收集会炸。
+        // 同步投递：Progress<T> 会把回调甩给线程池，那样断言就得靠 Task.Delay
+        // 去赌调度，在 CI 上是不稳定的来源。
         var reportCount = 0;
-        await store.FinalizeAsync(new Progress<long>(_ => Interlocked.Increment(ref reportCount)));
-        await Task.Delay(100);
+        await store.FinalizeAsync(new SynchronousProgress<long>(_ => Interlocked.Increment(ref reportCount)));
 
         Assert.True(Volatile.Read(ref reportCount) > 0, "收尾时应报告校验进度");
     }

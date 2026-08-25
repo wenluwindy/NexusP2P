@@ -10,9 +10,11 @@
 [![Release](https://img.shields.io/github/v/release/wenluwindy/NexusP2P?style=for-the-badge&logo=github&color=6366f1)](https://github.com/wenluwindy/NexusP2P/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/wenluwindy/NexusP2P/total?style=for-the-badge&logo=windows&color=0ea5e9)](https://github.com/wenluwindy/NexusP2P/releases)
 [![.NET](https://img.shields.io/badge/.NET-9.0-512BD4?style=for-the-badge&logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
-[![Platform](https://img.shields.io/badge/Windows%20%7C%20Linux%20%7C%20Web-lightgrey?style=for-the-badge)](#-下载)
+[![Platform](https://img.shields.io/badge/Windows%20%7C%20Linux%20%7C%20Web-lightgrey?style=for-the-badge)](#下载)
 
-[下载](#-下载) · [快速开始](#-快速开始) · [工作原理](#-工作原理) · [自部署](#-部署信令服务器) · [文档](#-文档)
+**当前版本 v2.2.0** —— 网页端流式另存、多文件一键 ZIP、可选访问密码。[查看更新内容 →](#版本历史)
+
+[下载](#下载) · [快速开始](#快速开始) · [工作原理](#工作原理) · [自部署](#部署信令服务器) · [文档](#文档)
 
 </div>
 
@@ -90,14 +92,26 @@ NexusP2P 把这一步删掉了。
 
 ## 下载
 
-**Windows 桌面客户端** — [前往 Releases 下载最新版本 →](https://github.com/wenluwindy/NexusP2P/releases/latest)
+[前往 Releases 下载 v2.2.0 →](https://github.com/wenluwindy/NexusP2P/releases/latest)
+
+**Windows 客户端**
 
 | 文件 | 说明 |
 | :-- | :-- |
-| `NexusP2P-Setup-<版本>-win-x64.exe` | 安装包，自包含运行时，**无需另装 .NET** |
+| `NexusP2P-Setup-2.2.0-win-x64.exe` | 安装包，自包含运行时，**无需另装 .NET** |
 | `nexusp2p-win-x64.zip` | 免安装绿色包，含桌面端 + CLI + 信令服务器 |
 
+**Linux 信令服务器**（自部署用，自包含单文件，目标机无需装 .NET 运行时）
+
+| 文件 | 说明 |
+| :-- | :-- |
+| `nexusp2p-signaling-linux-x64.tar.gz` | 常规 x86_64 服务器 / 云主机 |
+| `nexusp2p-signaling-linux-arm64.tar.gz` | ARM 服务器、树莓派、部分云主机 |
+
+包内含 systemd 服务单元、Nginx 反代示例与部署说明，解压后按 [`packaging/LINUX.md`](packaging/LINUX.md) 部署即可。
+
 > 不想装任何东西？打开网页端直接用 —— 网页端「设置」页同样提供下载入口。
+> 网页端由信令服务器一并托管，部署好服务器就有了网页端，没有额外的构建步骤。
 
 ---
 
@@ -265,10 +279,16 @@ dotnet test    NexusP2P.sln --configuration Release
 
 打包发布：
 
-```powershell
-./packaging/package.sh win        # 完整发布包
-./packaging/package-dll.sh        # framework-dependent 包
-```
+| 命令 | 产物 |
+| :-- | :-- |
+| `./packaging/package.sh win` | `dist/nexusp2p-win-x64.zip`（桌面端 + CLI + 信令服务器） |
+| `./packaging/package.sh linux` | `dist/nexusp2p-signaling-linux-{x64,arm64}.tar.gz`（自包含信令服务器） |
+| `./packaging/package.sh all` | 以上全部 |
+| `./packaging/build-installer.ps1 -Version 2.2.0` | `dist/NexusP2P-Setup-2.2.0-win-x64.exe`（需 Inno Setup） |
+| `./packaging/package-dll.sh` | framework-dependent 包（目标机已有 .NET 运行时时体积更小） |
+
+版本号来自 `NEXUSP2P_VERSION` 环境变量；正式发布由推送 `v*` 标签触发 GitHub Actions
+（[`.github/workflows/release.yml`](.github/workflows/release.yml)）自动构建 Windows 与 Linux 两端产物并发布到 Releases。
 
 网页端测试：
 
@@ -315,6 +335,7 @@ NexusP2P/
 | 网络约束实测 | [`docs/spikes/network-constraints.md`](docs/spikes/network-constraints.md) |
 | 校园网 AP 隔离验证 | [`docs/spikes/campus-ap-isolation.md`](docs/spikes/campus-ap-isolation.md) |
 | 浏览器存储能力验证 | [`docs/spikes/browser-storage.md`](docs/spikes/browser-storage.md) |
+| v2.2.0 变更记录 | [`docs/报告/CHANGELOG_V2.2.0.md`](docs/报告/CHANGELOG_V2.2.0.md) |
 
 ---
 
@@ -332,6 +353,9 @@ NexusP2P/
   在此之前密钥藏在 URL fragment 里，服务器在密码学上无法解密，但用户得转述
   43 个字符的密钥，实际上没人做得到
 - ⚠ 信令房间与文件码**不是身份认证机制**，生产环境务必配合 HTTPS、限速与房间上限
+- ⚠ **访问密码（v2.2.0，可选）**只是文件码之外的第二道进房门槛：服务器只存 PBKDF2-SHA256
+  校验值而不存明文，但它经由信令服务器校验，服务器看得到它。密码错误与文件码无效返回同一句
+  「房间不可用」，不引入新的枚举通道。请与文件码**分开渠道**传递
 
 ---
 
@@ -341,7 +365,27 @@ NexusP2P/
 - 能否 P2P 直连取决于双方网络环境，直连失败时需要可用的 TURN 服务兜底
 - 信令房间保存在内存中，服务重启会清空；但已落盘的分片进度不依赖房间，重新发起即可续传
 - 中继模式的实际速度受 TURN 服务器上行带宽限制
+- 网页端的流式另存与一键 ZIP 依赖 Service Worker，因此只在 HTTPS（或 localhost）下可用；
+  被浏览器拦截或归档超过 4 GiB（zip64 之外）时自动回退到逐文件下载链接，数据不会丢
+- 访问密码由信令服务器校验，服务器看得到它 —— 它挡的是「拿到文件码但没拿到密码」的人，
+  内容机密性依赖 AES-256-GCM 而不是这道密码
 - [`dist/`](dist/) 中的预构建产物未必对应最新源码，**以源码构建为准**
+
+---
+
+## 版本历史
+
+| 版本 | 主要变化 |
+| :-- | :-- |
+| **v2.2.0**（当前） | 网页端 Service Worker 流式另存、多文件一键 ZIP 打包、可选访问密码；wire 与 v2.1.0 逐字节一致，无需迁移 |
+| v2.1.0 | 接收端只需九位文件码，密钥改由发送方在加密通道内推送 |
+| v2.0.1 | 修复网页端看不到分享链接 |
+| v2.0.0 | 一对多分发（一次发送、多人接收）、网页端界面重做 |
+| v1.0.1 | 桌面端自动更新、安装器本地化修复 |
+| v1.0.0 | 首个正式版本：P2P 直连、断点续传、桌面端 / CLI / 网页端 |
+
+完整的 v2.2.0 变更记录见 [`docs/报告/CHANGELOG_V2.2.0.md`](docs/报告/CHANGELOG_V2.2.0.md)，
+历次发布产物见 [Releases](https://github.com/wenluwindy/NexusP2P/releases)。
 
 ---
 
