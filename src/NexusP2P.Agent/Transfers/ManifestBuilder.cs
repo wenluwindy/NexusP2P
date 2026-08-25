@@ -139,11 +139,22 @@ public static class ManifestBuilder
         var result = await hasher
             .ComputeAsync(
                 stream,
-                progress is null ? null : new Progress<long>(read => progress.Report(alreadyHashed + read)),
+                progress is null ? null : new RelayProgress<long>(read => progress.Report(alreadyHashed + read)),
                 cancellationToken)
             .ConfigureAwait(false);
 
         return ManifestEntry.FromHashResult(manifestPath, result);
+    }
+
+    /// <summary>
+    /// 只做值变换的透明进度中继。
+    ///
+    /// <para>刻意<b>不</b>用 <see cref="Progress{T}"/>：那会把回调再投一次线程池，
+    /// 把调用方选择的投递语义悄悄换掉。中继只该改值，不该改语义。</para>
+    /// </summary>
+    private sealed class RelayProgress<T>(Action<T> handler) : IProgress<T>
+    {
+        public void Report(T value) => handler(value);
     }
 }
 

@@ -225,8 +225,9 @@ public sealed class PieceStore : IAsyncDisposable
     /// 每个分片入库时都校验过，所以这一遍查的是<b>落盘之后</b>的完整性 ——
     /// 磁盘写入错误、驱动 bug、别的程序动了文件，只有重读才能发现。</para>
     ///
-    /// <para><paramref name="progress"/> 的回调<b>必须线程安全</b>：
-    /// <see cref="Progress{T}"/> 会把回调投到线程池并可能并发执行。</para>
+    /// <para><paramref name="progress"/> 的 <c>Report</c> 在读取文件的线程上<b>同步</b>调用 ——
+    /// 中继只做字节数偏移，不改变投递语义。传 <see cref="Progress{T}"/> 进来就仍然是
+    /// 投线程池、可能并发（回调需线程安全）；传同步实现进来，Report 返回时回调就已经跑完了。</para>
     /// </summary>
     public async Task<IReadOnlyList<string>> FinalizeAsync(
         IProgress<long>? progress = null,
@@ -260,7 +261,7 @@ public sealed class PieceStore : IAsyncDisposable
                 var localProgress = scanned;
                 var result = await hasher.ComputeAsync(
                         stream,
-                        new Progress<long>(read => progress?.Report(localProgress + read)),
+                        new RelayProgress<long>(read => progress?.Report(localProgress + read)),
                         cancellationToken)
                     .ConfigureAwait(false);
 
@@ -290,6 +291,18 @@ public sealed class PieceStore : IAsyncDisposable
     }
 
     // ---- 内部实现 ----
+
+    /// <summary>
+    /// 只做值变换的透明进度中继。
+    ///
+    /// <para>刻意<b>不</b>用 <see cref="Progress{T}"/>：那会把回调再投一次线程池，
+    /// 于是调用方即便传了同步的 IProgress 进来，Report 返回时回调也未必跑过 ——
+    /// 中继凭空改掉了调用方选择的投递语义。中继只该改值，不该改语义。</para>
+    /// </summary>
+    private sealed class RelayProgress<T>(Action<T> handler) : IProgress<T>
+    {
+        public void Report(T value) => handler(value);
+    }
 
     /// <summary>
     /// 建好每个文件的 <c>.part</c>，长度设为最终长度（稀疏）。
