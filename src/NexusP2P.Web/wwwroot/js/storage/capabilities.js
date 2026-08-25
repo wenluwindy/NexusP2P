@@ -3,14 +3,17 @@
 // 这个文件里没有任何一处读 UA 字符串 —— 按型号分流会把新浏览器
 // 无理由地挡在门外，而能力探测天然向前兼容。
 //
-// 三种策略的实测数据（docs/spikes/browser-storage.md，Task 0.2）：
+// 四种策略的实测数据（docs/spikes/browser-storage.md，Task 0.2）：
 //
 //   目录直写  showDirectoryPicker  内存恒定    无实际上限（受磁盘）
 //   OPFS      navigator.storage    ≤10 MiB     5 GiB 实测通过
 //   内存 Blob 永远可用             与文件 1:1  **5 GiB 要占 5132 MiB 堆**
+//   流式另存  Service Worker       恒定        收完后的「拷贝出去」一步
 //
 // Blob 的内存占用与文件大小 1:1，所以它只能是最后兜底，而且必须在界面上
 // 明说上限。一台 8 GB 内存的笔记本收 5 GiB 文件，标签页会先死。
+
+import { isStreamSaveSupported } from './stream-saver.js';
 
 export const StorageStrategy = {
     /** 用户选一个目录，多文件直接按结构写进去。文件夹传输的首选。 */
@@ -34,6 +37,7 @@ export function detectCapabilities() {
         directory: typeof window.showDirectoryPicker === 'function',
         saveFile: typeof window.showSaveFilePicker === 'function',
         opfs: typeof navigator.storage?.getDirectory === 'function',
+        streamSave: isStreamSaveSupported(),
         blob: true,
     };
 }
@@ -96,7 +100,8 @@ export function describeStrategy(strategy, totalBytes) {
             return {
                 label: '先写入浏览器存储，完成后另存',
                 detail: '内存占用恒定，但完成后需要再拷贝一次到你选的位置。' +
-                    '浏览器配额不可靠，超过 5 GiB 有失败风险。',
+                    '浏览器配额不可靠，超过 5 GiB 有失败风险。' +
+                    '（支持流式另存时，完成后会自动打包成单个 ZIP 保存。）',
                 withinLimit: totalBytes <= 5 * 1024 * 1024 * 1024,
             };
 
@@ -104,7 +109,8 @@ export function describeStrategy(strategy, totalBytes) {
             return {
                 label: '全部暂存在内存中',
                 detail: `内存占用与文件大小 1:1（${formatSize(totalBytes)} 的内容大约要占 ` +
-                    `${formatSize(totalBytes)} 内存）。这是最后的兜底方案。`,
+                    `${formatSize(totalBytes)} 内存）。这是最后的兜底方案。` +
+                    '（支持流式另存时，完成后会自动保存，不需要逐个点链接。）',
                 withinLimit: totalBytes <= BLOB_SAFE_LIMIT,
             };
     }

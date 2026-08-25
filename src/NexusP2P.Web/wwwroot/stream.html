@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <title>NexusP2P 流式下载桥</title>
+    <!--
+        隐藏 iframe 用的保活页（思路来自 StreamSaver.js 的 mitm.html，MIT）。
+
+        NexusP2P 是同源自部署：页面可以直发消息给 Service Worker，
+        不需要这里转发。这个页面只剩一个职责 —— 在浏览器（尤其是 Firefox）
+        里持住 sw.js 的注册，让长时间打包/拷贝期间 worker 不被回收，
+        fetch 劫持因此一直可用。
+    -->
+</head>
+<body>
+<script>
+    'use strict';
+
+    // 与主页面的注册是同一次（幂等），activate 时 clients.claim()
+    // 会把它接管到本 iframe 上
+    navigator.serviceWorker
+        .register('/sw.js', { scope: '/' })
+        .catch(() => {
+            // 注册失败时主页面会走「下载链接」兜底路径，这里不必惊动用户
+        });
+
+    // Firefox 保活探测的落点：sw.js 拦截以 /ping 结尾的请求
+    const ping = new URL('ping', location.href).toString();
+
+    setInterval(() => {
+        fetch(ping).catch(() => {});
+    }, 10000);
+
+    // 主页面等这条消息决定是否可用流式保存；发不出去（跨域打开等）
+    // 主页面有超时兜底
+    if (window.parent !== window) {
+        parent.postMessage('nexusp2p-stream-ready', location.origin);
+    }
+</script>
+</body>
+</html>

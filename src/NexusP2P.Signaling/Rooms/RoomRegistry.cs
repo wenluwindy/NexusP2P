@@ -46,8 +46,12 @@ public sealed class RoomRegistry(
     ///
     /// <para><paramref name="maxReceivers"/> 是接收方席位数（AD-15）：
     /// 默认 1 时行为与 V1 完全一致。调用方负责先把它夹到合法区间。</para>
+    ///
+    /// <para><paramref name="password"/> 是可选的进房口令：null（默认）时
+    /// 房间不设口令，行为与从前完全一致。</para>
     /// </summary>
-    public bool TryCreate(IPeerSink sender, out TransferCode code, out Room? room, int maxReceivers = 1)
+    public bool TryCreate(
+        IPeerSink sender, out TransferCode code, out Room? room, int maxReceivers = 1, RoomPassword? password = null)
     {
         code = default;
         room = null;
@@ -63,7 +67,7 @@ public sealed class RoomRegistry(
         for (var attempt = 0; attempt < MaxCodeAllocationAttempts; attempt++)
         {
             var candidate = TransferCode.Generate();
-            var created = new Room(candidate, now, maxReceivers);
+            var created = new Room(candidate, now, maxReceivers, password);
 
             if (!_rooms.TryAdd(candidate.Value, created))
             {
@@ -97,8 +101,13 @@ public sealed class RoomRegistry(
     ///
     /// <para>以接收方身份进入时 <paramref name="peerId"/> 是服务器分配的会话内
     /// 标识（AD-12）；发送方没有 peerId，返回 null。</para>
+    ///
+    /// <para><paramref name="password"/>：房间设置了口令时必须凭口令进房。
+    /// 口令缺失或错误与「码不存在」返回同一个 <see cref="JoinOutcome.Unavailable"/>
+    /// —— 口令不能给九位码引入新的枚举预言机。</para>
     /// </summary>
-    public JoinOutcome TryJoin(TransferCode code, PeerRole role, IPeerSink sink, out Room? room, out string? peerId)
+    public JoinOutcome TryJoin(
+        TransferCode code, PeerRole role, IPeerSink sink, string? password, out Room? room, out string? peerId)
     {
         room = null;
         peerId = null;
@@ -118,6 +127,15 @@ public sealed class RoomRegistry(
             if (logger.IsEnabled(LogLevel.Debug))
             {
                 logger.LogDebug("入房失败：房间 {Code} 的宽限期已过。", code);
+            }
+            return JoinOutcome.Unavailable;
+        }
+
+        if (existing.Password is { } verifier && !verifier.Matches(password))
+        {
+            if (logger.IsEnabled(LogLevel.Debug))
+            {
+                logger.LogDebug("入房失败：房间 {Code} 的口令缺失或不正确。", code);
             }
             return JoinOutcome.Unavailable;
         }
@@ -143,9 +161,13 @@ public sealed class RoomRegistry(
         return JoinOutcome.Joined;
     }
 
+    /// <summary>不带口令的完整入口（V2 及更早的全部调用方）。</summary>
+    public JoinOutcome TryJoin(TransferCode code, PeerRole role, IPeerSink sink, out Room? room, out string? peerId) =>
+        TryJoin(code, role, sink, null, out room, out peerId);
+
     /// <summary>V1 兼容入口：不需要 peerId 的调用方继续用它。</summary>
     public JoinOutcome TryJoin(TransferCode code, PeerRole role, IPeerSink sink, out Room? room) =>
-        TryJoin(code, role, sink, out room, out _);
+        TryJoin(code, role, sink, null, out room, out _);
 
     /// <summary>成员离开。房间变空后进入宽限期，由 <see cref="Sweep"/> 回收。</summary>
     public void Leave(Room room, PeerRole role, IPeerSink sink)

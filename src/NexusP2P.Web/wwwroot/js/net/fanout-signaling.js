@@ -11,13 +11,14 @@
 
 import { SignalingError } from './signaling.js';
 
-/** 建房成功后拿到的东西（V2：多了生效的席位数）。 */
+/** 建房成功后拿到的东西（V2：多了生效的席位数）。passwordProtected=false 且带了密码 = 旧服务器。 */
 export class FanOutRoomCreated {
-    constructor(code, shareUrlBase, iceServers, maxReceivers) {
+    constructor(code, shareUrlBase, iceServers, maxReceivers, passwordProtected = false) {
         this.code = code;
         this.shareUrlBase = shareUrlBase;
         this.iceServers = iceServers;
         this.maxReceivers = maxReceivers;
+        this.passwordProtected = passwordProtected;
     }
 }
 
@@ -40,12 +41,16 @@ export class FanOutSignalingClient {
     }
 
     /** 建房（声明接收方席位数），返回文件码、分享基址与生效席位。 */
-    async createRoom(maxReceivers, signal) {
+    async createRoom(maxReceivers, signal, password) {
         if (!(Number.isInteger(maxReceivers)) || maxReceivers < 1) {
             throw new SignalingError(`maxReceivers 必须是不小于 1 的整数，实际为 ${maxReceivers}。`);
         }
 
-        const url = this._buildUrl(`/signal/create?maxReceivers=${maxReceivers}`);
+        // 口令为空时不拼 —— 与从前逐字节一致
+        const passwordQuery = typeof password === 'string' && password.length > 0
+            ? `&password=${encodeURIComponent(password)}`
+            : '';
+        const url = this._buildUrl(`/signal/create?maxReceivers=${maxReceivers}${passwordQuery}`);
         throwIfAborted(signal);
 
         // 【与 SignalingClient._connect 同样的修复】：onmessage 必须在建 socket
@@ -98,7 +103,9 @@ export class FanOutSignalingClient {
             message.shareUrlBase ?? '',
             readIceServers(message),
             // 旧服务器不回显 maxReceivers：视为 1，调用方据此降级为一对一（AD-15）
-            typeof message.maxReceivers === 'number' ? message.maxReceivers : 1);
+            typeof message.maxReceivers === 'number' ? message.maxReceivers : 1,
+            // 旧服务器不回显 passwordProtected：视为未生效，调用方据此警告
+            message.passwordProtected === true);
     }
 
     /**

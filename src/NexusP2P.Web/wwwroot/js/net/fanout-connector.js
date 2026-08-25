@@ -30,12 +30,13 @@ export const FanOutLinkState = {
  * @param onRoomCreated (room: FanOutRoomCreated) => void — 拿到码时立刻回调
  * @param onLinkUpdate (snapshot) => void — 任一链路的状态/进度变了
  *   快照形状：{ peerId, state, progress: {completedBytes,totalBytes}|null, error|null }
+ * @param password 可选进房口令。不传/为空 = 不设口令，行为与从前完全一致。
  * @param signal AbortController.signal — 停止接纳并取消所有在传链路
  * @returns 所有已开链路结束后 resolve，返回 Map<peerId, snapshot>
  */
 export async function offerMany(
     signalingOrigin, manifest, files, secret, maxReceivers,
-    { onRoomCreated, onLinkUpdate, signal } = {}) {
+    { onRoomCreated, onLinkUpdate, signal, password } = {}) {
     const signaling = new FanOutSignalingClient(signalingOrigin);
     const links = new Map();      // peerId → snapshot
     const linkTasks = [];
@@ -46,7 +47,7 @@ export async function offerMany(
     };
 
     try {
-        const room = await signaling.createRoom(maxReceivers, signal);
+        const room = await signaling.createRoom(maxReceivers, signal, password);
         onRoomCreated?.(room);
 
         // 接纳循环：每来一个接收方开一条链路。abort 或信令关闭时退出。

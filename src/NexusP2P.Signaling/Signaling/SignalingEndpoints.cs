@@ -22,6 +22,14 @@ public static class SignalingEndpoints
     /// <summary>单条信令消息的大小上限。SDP 通常几 KB，给足余量但必须有界。</summary>
     private const int MaxSignalMessageBytes = 256 * 1024;
 
+    /// <summary>
+    /// 进房口令的最大长度（字符）。
+    ///
+    /// <para>口令随查询参数走 WSS（传输中加密，等价于放在消息体里）。
+    /// 上限是为了防止把建房请求当成长文缓冲 —— 口令不可能需要这么长。</para>
+    /// </summary>
+    private const int MaxPasswordLength = 64;
+
     public static void MapSignaling(this WebApplication app)
     {
         app.Map("/signal/create", HandleCreateAsync);
@@ -49,10 +57,29 @@ public static class SignalingEndpoints
             maxReceivers = Math.Clamp(requested, 1, options.MaxReceiversPerRoom);
         }
 
+        // 可选口令：不设置（默认）时建房行为与从前完全一致。
+        // 口令错误信息在这里直接说 —— 建房方是自己人，不存在预言机问题。
+        var rawPassword = context.Request.Query["password"].ToString();
+        RoomPassword? roomPassword = null;
+        if (rawPassword.Length > 0)
+        {
+            if (rawPassword.Length > MaxPasswordLength)
+            {
+                using var early = await context.WebSockets.AcceptWebSocketAsync();
+                using var earlySink = new WebSocketPeerSink(early);
+                await earlySink.SendAsync(
+                    ServerMessage.Error($"密码过长（最多 {MaxPasswordLength} 个字符）。"), context.RequestAborted);
+                await CloseAsync(early, "密码过长");
+                return;
+            }
+
+            roomPassword = RoomPassword.Create(rawPassword);
+        }
+
         using var socket = await context.WebSockets.AcceptWebSocketAsync();
         using var sink = new WebSocketPeerSink(socket);
 
-        if (!registry.TryCreate(sink, out var code, out var room, maxReceivers))
+        if (!registry.TryCreate(sink, out var code, out var room, maxReceivers, roomPassword))
         {
             await sink.SendAsync(
                 ServerMessage.Error("服务器当前房间过多，请稍后再试。"), context.RequestAborted);
@@ -63,7 +90,8 @@ public static class SignalingEndpoints
         var shareBase = $"{options.PublicOrigin.TrimEnd('/')}/{ShareLinkFactory.RoomPathSegment}";
         await sink.SendAsync(
             ServerMessage.Created(
-                code.Digits, shareBase, turn.BuildIceServers($"room-{code.Digits}"), maxReceivers),
+                code.Digits, shareBase, turn.BuildIceServers($"room-{code.Digits}"), maxReceivers,
+                roomPassword is not null),
             context.RequestAborted);
 
         await PumpSenderAsync(socket, sink, registry, room!, logger, context.RequestAborted);
@@ -99,6 +127,10 @@ public static class SignalingEndpoints
             ? PeerRole.Sender
             : PeerRole.Receiver;
 
+        // 可选口令：房间设置了口令时，缺失/错误与「码不存在」返回同一句话 ——
+        // 口令不能给九位码引入新的枚举预言机。发送方重连同样要凭口令。
+        var password = context.Request.Query["password"].ToString();
+
         // 码格式不对时也走同一条失败路径。若在这里提前返回 400，
         // 「格式对但不存在」与「格式不对」就有了差异，又成了预言机。
         var parsed = TransferCode.TryParse(rawCode, out var code);
@@ -109,7 +141,7 @@ public static class SignalingEndpoints
         Room? room = null;
         string? peerId = null;
         var outcome = parsed
-            ? registry.TryJoin(code, role, sink, out room, out peerId)
+            ? registry.TryJoin(code, role, sink, password, out room, out peerId)
             : JoinOutcome.Unavailable;
 
         if (outcome != JoinOutcome.Joined)

@@ -8,12 +8,13 @@
 //   2. 建 RTCPeerConnection 与挂处理器之间有窗口，这期间到达的 offer 会丢。
 //      所以在 beginSignalDelivery() 之前先把信令攒住，之后按原顺序补发。
 
-/** 建房成功后拿到的东西。 */
+/** 建房成功后拿到的东西。passwordProtected=false 且调用方带了密码 = 旧服务器，未生效。 */
 export class RoomCreated {
-    constructor(code, shareUrlBase, iceServers) {
+    constructor(code, shareUrlBase, iceServers, passwordProtected = false) {
         this.code = code;
         this.shareUrlBase = shareUrlBase;
         this.iceServers = iceServers;
+        this.passwordProtected = passwordProtected;
     }
 }
 
@@ -44,21 +45,35 @@ export class SignalingClient {
         this._peerPresent = createLatch();
     }
 
-    /** 建房，返回文件码与分享链接基址。发送方用这个。 */
-    async createRoom(signal) {
-        const message = await this._connect('/signal/create', 'created', '建房', signal);
+    /**
+     * 建房，返回文件码与分享链接基址。发送方用这个。
+     *
+     * @param {object} [options]
+     * @param {string} [options.password] 可选进房口令。留空/不传 = 不设口令，
+     *   与从前完全一致。口令经 WSS 查询参数送达服务器（传输中加密）。
+     */
+    async createRoom(signal, { password } = {}) {
+        const query = buildPasswordQuery(password, '');
+        const message = await this._connect(`/signal/create${query}`, 'created', '建房', signal);
 
         return new RoomCreated(
             message.code ?? throwMissingCode(),
             message.shareUrlBase ?? '',
-            readIceServers(message));
+            readIceServers(message),
+            message.passwordProtected === true);
     }
 
-    /** 用文件码进房。 */
-    async joinRoom(code, asSender = false, signal) {
+    /**
+     * 用文件码进房。
+     *
+     * @param password 发送方设置了口令时的进房口令。房间没设口令时带上也无妨
+     *   （服务器忽略）；设了而没带/带错，得到与「码不存在」相同的错误。
+     */
+    async joinRoom(code, asSender = false, signal, password) {
         const role = asSender ? 'sender' : 'receiver';
+        const query = buildPasswordQuery(password, `role=${role}`);
         const message = await this._connect(
-            `/signal/join/${encodeURIComponent(code)}?role=${role}`, 'joined', '进房', signal);
+            `/signal/join/${encodeURIComponent(code)}?${query}`, 'joined', '进房', signal);
 
         // 重连回到的房间里对端可能已经在了 —— 见文件头第 1 条
         if (message.peerPresent === true) {
@@ -318,6 +333,22 @@ function readIceServers(message) {
     // 直接交给 RTCPeerConnection：字段名（urls/username/credential）
     // 在服务端就是按 RTCIceServer 对齐的
     return message.iceServers.filter(entry => entry !== null && Array.isArray(entry.urls));
+}
+
+/**
+ * 把可选口令拼进查询串。
+ *
+ * @param existing 已有的查询段（如 `role=receiver`），空串表示还没有。
+ *   空口令不拼 —— 不设口令的房间与从前逐字节一致。
+ */
+function buildPasswordQuery(password, existing) {
+    if (typeof password !== 'string' || password.length === 0) {
+        return existing;
+    }
+
+    return existing.length > 0
+        ? `${existing}&password=${encodeURIComponent(password)}`
+        : `?password=${encodeURIComponent(password)}`;
 }
 
 function throwMissingCode() {

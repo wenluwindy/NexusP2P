@@ -20,8 +20,8 @@
 
 | 端点 | 用途 |
 |---|---|
-| `GET /signal/create?maxReceivers=N` （WebSocket 升级） | 建房，占住发送方位子。`maxReceivers` 可省略，默认 1（V1 行为），服务器夹到 `[1, MaxReceiversPerRoom]` |
-| `GET /signal/join/{code}?role=receiver\|sender` （WebSocket 升级） | 用文件码进房 |
+| `GET /signal/create?maxReceivers=N&password=…` （WebSocket 升级） | 建房，占住发送方位子。`maxReceivers` 可省略，默认 1（V1 行为），服务器夹到 `[1, MaxReceiversPerRoom]`。`password` 可省略，设置后房间启用口令（最多 64 字符，超长报错 —— 建房方是自己人，没有预言机顾虑） |
+| `GET /signal/join/{code}?role=receiver\|sender&password=…` （WebSocket 升级） | 用文件码进房。房间设置了口令时必须带正确的 `password` |
 | `GET /health` | 健康检查：活跃房间数、PublicOrigin、是否配了中继 |
 
 `role` 默认 `receiver`。发送方**重连**时用 `role=sender` 回到原来的位子。
@@ -32,6 +32,28 @@
 > **但要注意（V3）**：知道文件码的人可以抢占**接收方**位子并拿到文件 ——
 > 密钥现在由发送方在通道里推送，文件码因此成为唯一凭证。这是「只念一串
 > 数字就能收」的直接代价，见 [`protocol.md`](protocol.md) 的「密钥要约」。
+> 可选口令（见下）就是在这一层加的第二道门槛。
+
+## 可选口令（V4）
+
+发送方建房时带上 `password` 查询参数，房间即启用口令；不带则一切与从前
+完全一致（wire 上逐字节相同，旧客户端无感）。
+
+- **校验位置**：信令服务器。服务器存 PBKDF2-SHA256 校验值（每房独立盐，
+  10 万次迭代），**不存明文**。任何角色进房（含发送方重连）都要凭口令 ——
+  否则宽限期里空出来的发送方座位就成了口令的旁门
+- **失败不可区分**：口令缺失/错误返回与「码不存在」**完全相同**的
+  `Unavailable`。口令不能给九位码引入新的枚举预言机；区分信息只进服务端日志
+- **回显**：`created` 应答带 `passwordProtected: true`。客户端据此识别
+  「我带了口令、但旧服务器没认」的静默降级并警告用户
+  （与 `maxReceivers` 回显同一模式）
+- **威胁模型**：口令经信令连接（WSS）传递，服务器看得到它。这与项目
+  既有边界一致 —— V3 起密钥本身就经由信令协商的连接送达，传输内容的
+  机密性依赖 AES-256-GCM 而不是口令。口令只挡「拿到文件码但没拿到口令」
+  的人，因此要与文件码**分开渠道**传递，也永远不进分享链接
+- **C# 客户端**：尚未实现口令参数（不传即不设口令，与从前一致）。
+  用口令保护的房间只能由网页端进房；C# 端会得到与其他入房失败相同的
+  「房间不可用」错误
 
 ## 房间成员（V2，AD-12）
 
@@ -58,7 +80,7 @@
 
 | `type` | 时机 | 字段 |
 |---|---|---|
-| `created` | 建房成功 | `code`（九位无分隔）、`shareUrlBase`、`iceServers`、`maxReceivers`（生效值） |
+| `created` | 建房成功 | `code`（九位无分隔）、`shareUrlBase`、`iceServers`、`maxReceivers`（生效值）、`passwordProtected`（口令是否生效；旧服务器不回此字段） |
 | `joined` | 进房成功 | `iceServers`、`peerPresent`；接收方：`peerId`（自己的）；发送方（重连）：`peers`（在房接收方的 peerId 列表） |
 | `peer-joined` | 有接收方进来了（只发给发送方） | `peerId` |
 | `peer-left` | 成员走了 | 发给发送方时带 `peerId`；发给接收方时无 `peerId`（走的必然是发送方） |
@@ -92,7 +114,7 @@
 
 ## 入房失败：绝不区分原因
 
-**「码不存在」「码格式不对」「位子已被占」「席位已满」必须给出完全相同的错误消息。**
+**「码不存在」「码格式不对」「位子已被占」「席位已满」「口令缺失或错误」必须给出完全相同的错误消息。**
 任何差异都会让九位码有了枚举预言机 —— 攻击者靠错误信息就能筛出活跃房间。
 
 实现上把这件事做成**类型上不可能出错**：`JoinOutcome` 只有

@@ -7,6 +7,8 @@
 // 开始。假定「按顺序到达」会在第一次重传时就静默写错位置。
 
 import { StorageStrategy, formatSize } from './capabilities.js';
+import { isStreamSaveSupported, saveStreamedFile } from './stream-saver.js';
+import { createZipStream } from '../core/zip-stream.js';
 
 /** 目录直写：多文件按清单结构写进用户选的目录。 */
 export class DirectoryWriter {
@@ -175,18 +177,19 @@ export class OpfsWriter {
         this._streams.clear();
 
         const downloads = [];
+        const blobs = [];
+
         for (const [fileIndex, handle] of this._handles) {
             const file = await handle.getFile();
-            downloads.push({
-                path: this._manifest.entries[fileIndex].path,
-                url: URL.createObjectURL(file),
-                size: file.size,
-            });
+            const path = this._manifest.entries[fileIndex].path;
+            blobs.push({ path, blob: file });
+            downloads.push({ path, url: URL.createObjectURL(file), size: file.size });
         }
 
         return {
             strategy: StorageStrategy.Opfs,
-            message: '已收完并存在浏览器存储里，点下面的链接保存到磁盘。',
+            message: startStreamOut(this._manifest, blobs) ??
+                '已收完并存在浏览器存储里，点下面的链接保存到磁盘。',
             downloads,
         };
     }
@@ -225,15 +228,21 @@ export class BlobWriter {
     }
 
     async finalize() {
-        const downloads = this._manifest.entries.map((entry, index) => ({
+        const blobs = this._manifest.entries.map((entry, index) => ({
             path: entry.path,
-            url: URL.createObjectURL(new Blob([this._buffers[index]])),
-            size: entry.length,
+            blob: new Blob([this._buffers[index]]),
+        }));
+
+        const downloads = blobs.map(({ path, blob }) => ({
+            path,
+            url: URL.createObjectURL(blob),
+            size: blob.size,
         }));
 
         return {
             strategy: StorageStrategy.Blob,
-            message: '已收完，点下面的链接保存到磁盘。',
+            message: startStreamOut(this._manifest, blobs) ??
+                '已收完，点下面的链接保存到磁盘。',
             downloads,
         };
     }
@@ -256,6 +265,88 @@ export async function createWriter(strategy, manifest) {
         default:
             return BlobWriter.create(manifest);
     }
+}
+
+/** store 模式 zip 的单字段长度上限（u32）。超过需要 zip64，这里不支持。 */
+const ZIP_ENTRY_LIMIT = 0xFFFFFFFF;
+
+const NAME_ENCODER = new TextEncoder();
+
+/**
+ * 收完后的「一键流式保存」（OPFS / 内存策略专用增强）：
+ *
+ *   单文件 → 直接流式另存到下载文件夹；
+ *   多文件 → 打包成单个 store zip 流式保存，一次点击替代 N 个链接。
+ *
+ * 数据经 Service Worker 直落磁盘（stream-saver.js），内存占用与文件
+ * 大小无关 —— 这是 FilePizza 的做法，移植过来补齐「没有 File System
+ * Access API 的浏览器」的短板。
+ *
+ * **尽力而为，不阻塞主流程**：传输此时已经完成并校验通过，返回的
+ * message 会让用户知道可以等自动保存、也可以直接点兜底链接；异步
+ * 失败只记 console 警告 —— 链接还在，数据不会丢。
+ *
+ * @param {TransferManifest} manifest 清单（空目录列表也进 zip，保结构）
+ * @param {Array<{path: string, blob: Blob}>} blobs 收到的内容
+ * @returns {string|null} 提示文案；不可用时返回 null（走原有文案）
+ */
+function startStreamOut(manifest, blobs) {
+    if (blobs.length === 0 || !isStreamSaveSupported()) {
+        return null;
+    }
+
+    for (const { blob } of blobs) {
+        if (blob.size > ZIP_ENTRY_LIMIT) {
+            return null;   // 单文件超限：zip64 之外，直接另存也超 4 GiB 边界，退回链接
+        }
+    }
+
+    if (blobs.length === 1) {
+        const { path, blob } = blobs[0];
+        const filename = path.split('/').pop();
+        quietStart(saveStreamedFile(filename, { size: blob.size }, () => blob.stream()));
+        return `已收完，正在把「${filename}」流式保存到下载文件夹；` +
+            '若浏览器没有自动开始，请点下面的链接。';
+    }
+
+    // 多文件 → 单个 zip。store 模式下归档大小可精确算出，
+    // 写进 Content-Length 让下载进度条有总量。
+    const entries = [];
+    let exactSize = 22;   // EOCD
+
+    for (const directory of manifest.directories) {
+        const name = `${directory}/`;
+        const nameLength = NAME_ENCODER.encode(name).length;
+        entries.push({ name, directory: true });
+        exactSize += (30 + nameLength) + 16 + (46 + nameLength);
+    }
+
+    for (const { path, blob } of blobs) {
+        const nameLength = NAME_ENCODER.encode(path).length;
+        entries.push({
+            name: path,
+            stream: () => blob.stream(),
+            lastModified: blob.lastModified,
+        });
+        exactSize += (30 + nameLength) + blob.size + 16 + (46 + nameLength);
+    }
+
+    if (exactSize > ZIP_ENTRY_LIMIT) {
+        return null;   // 总量超限（zip64 之外），退回逐个链接
+    }
+
+    const filename = `nexusp2p-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '')}.zip`;
+    quietStart(saveStreamedFile(filename, { size: exactSize }, () => createZipStream(entries)));
+
+    return `已收完，正在把 ${blobs.length} 个文件打包成单个 ZIP 流式保存；` +
+        '若浏览器没有自动开始，请点下面的链接逐个保存。';
+}
+
+/** 后台跑一个保存任务，失败不炸主流程但要留下痕迹。 */
+function quietStart(task) {
+    task.catch(error => {
+        console.warn(`[writers] 流式保存失败，请改用页面上的下载链接：${error?.message ?? error}`);
+    });
 }
 
 export { formatSize };

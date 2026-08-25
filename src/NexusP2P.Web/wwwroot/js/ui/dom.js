@@ -171,6 +171,7 @@ export function setSendPhase(phase) {
     show('sendSummary', phase === 'ready' || phase === 'waiting' || phase === 'transferring');
     show('startSendBtn', phase === 'ready');
     show('maxPeersGroup', phase === 'ready');
+    show('sendPasswordGroup', phase === 'ready');
     show('sendPanel', phase === 'waiting' || phase === 'transferring' || phase === 'done');
     show('sendProgress', phase === 'transferring' || phase === 'done' || phase === 'failed');
     show('cancelSendBtn', phase === 'waiting' || phase === 'transferring');
@@ -210,6 +211,21 @@ export function readMaxPeers() {
     }
 
     return Math.max(1, value);
+}
+
+/**
+ * 读发送端的「访问密码」。空串 = 不设置。与 readMaxPeers 同样的容错原则：
+ * 找不到输入框时返回空串（等于不设置），不让可选功能弄崩主流程。
+ */
+export function readSendPassword() {
+    const input = document.getElementById('sendPasswordInput');
+    return input === null ? '' : input.value.trim();
+}
+
+/** 读接收端的「访问密码」。空串 = 对方没设置（或没填）。 */
+export function readReceivePassword() {
+    const input = document.getElementById('receivePasswordInput');
+    return input === null ? '' : input.value.trim();
 }
 
 /**
@@ -419,6 +435,7 @@ export function showCapabilities(capabilities) {
         ['直接写入文件夹', capabilities.directory],
         ['流式写入单个文件', capabilities.saveFile],
         ['浏览器存储（OPFS）', capabilities.opfs],
+        ['流式另存 / 一键 ZIP（Service Worker）', capabilities.streamSave],
     ];
 
     const panel = $('capabilities');

@@ -98,11 +98,12 @@ try {
     console.log('点「生成文件码」，拿到分享链接');
     await page.locator('#startSendBtn').click();
 
-    // 等分享链接真的填好（建房成功才有）
+    // 等分享链接真的填好（建房成功才有）。V2.1.0 起链接只带文件码，
+    // 不再有 # 密钥片段 —— 见 core/codes.js 的 buildShareLink。
     await page.waitForFunction(
         () => {
             const text = document.getElementById('shareLink')?.textContent ?? '';
-            return text.includes('#') && text.includes('/r/');
+            return !text.includes('#') && text.includes('/r/');
         },
         { timeout: 30_000 });
 

@@ -79,6 +79,18 @@
                 <p class="hint">1 人即一对一；多人同时接收时共享本机上行带宽，人越多每人越慢。</p>
             </div>
 
+            <!-- 可选口令：在九位文件码之外加一道进房门槛。留空 = 不设置，
+                 行为与从前完全一致 -->
+            <div class="input-group hidden" id="sendPasswordGroup">
+                <label for="sendPasswordInput">访问密码（可选）</label>
+                <input type="password" id="sendPasswordInput" autocomplete="new-password"
+                       placeholder="留空则只凭文件码即可接收">
+                <p class="hint">
+                    设置后对方必须输入相同密码才能接收。密码与文件码请用不同渠道
+                    分开传递；它不进入分享链接，也不参与内容加密。
+                </p>
+            </div>
+
             <button class="btn-primary btn-large hidden" id="startSendBtn">生成文件码并等待对方</button>
 
             <div id="sendPanel" class="send-panel hidden">
@@ -133,6 +145,13 @@
                 <input type="text" id="receiveInput" placeholder="111-111-111 或 https://…"
                        autocomplete="off" spellcheck="false">
                 <p class="hint">不需要密钥 —— 连上之后由发送方自动提供。</p>
+            </div>
+
+            <div class="input-group">
+                <label for="receivePasswordInput">访问密码（发送方设置过才填）</label>
+                <input type="password" id="receivePasswordInput" autocomplete="off"
+                       placeholder="未设置请留空">
+                <p class="hint">密码错误与文件码无效的提示相同，无法区分是哪一个错了。</p>
             </div>
 
             <button class="btn-primary btn-large" id="startReceiveBtn">开始接收</button>

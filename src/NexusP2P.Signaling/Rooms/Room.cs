@@ -29,8 +29,16 @@ public interface IPeerSink
 ///
 /// <para><see cref="MaxReceivers"/> 默认 1，此时行为与 V1 完全一致（AD-15）：
 /// 第二个接收方进房得到与「码不存在」相同的失败，不产生新的枚举预言机。</para>
+///
+/// <para><see cref="Password"/> 默认 null：不设口令的房间行为与从前完全一致。
+/// 设置后，<b>任何角色</b>（包括发送方重连）都必须凭口令进房 ——
+/// 否则宽限期里空出来的发送方座位就成了口令的旁门。</para>
 /// </summary>
-public sealed class Room(TransferCode code, DateTimeOffset createdAt, int maxReceivers = 1)
+public sealed class Room(
+    TransferCode code,
+    DateTimeOffset createdAt,
+    int maxReceivers = 1,
+    RoomPassword? password = null)
 {
     private readonly Lock _gate = new();
     private IPeerSink? _sender;
@@ -43,6 +51,9 @@ public sealed class Room(TransferCode code, DateTimeOffset createdAt, int maxRec
     public TransferCode Code { get; } = code;
 
     public DateTimeOffset CreatedAt { get; } = createdAt;
+
+    /// <summary>可选的进房口令校验材料。null = 该房间未设口令。</summary>
+    public RoomPassword? Password { get; } = password;
 
     /// <summary>接收方席位数。建房时声明（AD-15），生命周期内不变。</summary>
     public int MaxReceivers { get; } =

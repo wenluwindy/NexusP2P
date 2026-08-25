@@ -91,10 +91,10 @@ try {
 
     check(await page.title() === 'NexusP2P — 高速文件传输', '标题正确');
 
-    // 能力探测应该已经把三行状态渲染出来了 ——
+    // 能力探测应该已经把四行状态渲染出来了（目录/单文件/OPFS/流式另存）——
     // 它跑在 app.js 的 init() 里，渲染出来就证明整条启动链路走通了
     const capabilityRows = await page.locator('#capabilities .info-item').count();
-    check(capabilityRows === 3, `能力探测渲染出 3 行（实际 ${capabilityRows}）`);
+    check(capabilityRows === 4, `能力探测渲染出 4 行（实际 ${capabilityRows}）`);
 
     console.log('标签页切换');
     await page.locator('.tab-btn[data-tab="receive"]').click();

@@ -77,13 +77,14 @@ function classifyPair(local, remote) {
  *   而不是等对方进来之后。
  * @param onPeerArrived 对方进房、开始打洞时回调。这两个阶段的等待性质完全不同：
  *   「还没人来」可以等几小时，「正在打洞」超过十几秒就说明多半连不上了。
+ * @param password 可选进房口令。不传/为空 = 不设口令，行为与从前完全一致。
  */
-export async function offer(signalingOrigin, { onRoomCreated, onPeerArrived, signal } = {}) {
+export async function offer(signalingOrigin, { onRoomCreated, onPeerArrived, signal, password } = {}) {
     const signaling = new SignalingClient(signalingOrigin);
     let peer = null;
 
     try {
-        const room = await signaling.createRoom(signal);
+        const room = await signaling.createRoom(signal, { password });
         onRoomCreated?.(room);
 
         peer = createPeer(room.iceServers);
@@ -110,13 +111,13 @@ export async function offer(signalingOrigin, { onRoomCreated, onPeerArrived, sig
     }
 }
 
-/** 用文件码进房并等对方建通道过来。**接收方用这个。** */
-export async function answer(signalingOrigin, code, signal) {
+/** 用文件码进房并等对方建通道过来。**接收方用这个。** password 为发送方设置的口令（可选）。 */
+export async function answer(signalingOrigin, code, signal, password) {
     const signaling = new SignalingClient(signalingOrigin);
     let peer = null;
 
     try {
-        const iceServers = await signaling.joinRoom(code, false, signal);
+        const iceServers = await signaling.joinRoom(code, false, signal, password);
 
         peer = createPeer(iceServers);
 

@@ -63,6 +63,16 @@ public sealed record ServerMessage
     public int? MaxReceivers { get; init; }
 
     /// <summary>
+    /// 建房时口令是否已生效（回显给客户端）。
+    ///
+    /// <para>客户端据此识别「我带了口令、但旧服务器没认」的静默降级 ——
+    /// 与 <see cref="MaxReceivers"/> 回显的用途一致：宁可明说，不让用户
+    /// 以为自己设了口令而实际没有。旧服务器不回这个字段。</para>
+    /// </summary>
+    [JsonPropertyName("passwordProtected")]
+    public bool? PasswordProtected { get; init; }
+
+    /// <summary>
     /// 发送方进房（重连）那一刻已在房的接收方 peerId 列表（AD-12）。
     /// 只发给发送方 —— 接收方之间互不可见。
     /// </summary>
@@ -70,7 +80,8 @@ public sealed record ServerMessage
     public IReadOnlyList<string>? Peers { get; init; }
 
     public static ServerMessage Created(
-        string code, string shareUrlBase, IReadOnlyList<IceServer> iceServers, int maxReceivers) =>
+        string code, string shareUrlBase, IReadOnlyList<IceServer> iceServers, int maxReceivers,
+        bool passwordProtected = false) =>
         new()
         {
             Type = "created",
@@ -78,6 +89,7 @@ public sealed record ServerMessage
             ShareUrlBase = shareUrlBase,
             IceServers = iceServers,
             MaxReceivers = maxReceivers,
+            PasswordProtected = passwordProtected,
         };
 
     /// <summary>接收方的进房应答：带自己的 peerId。</summary>

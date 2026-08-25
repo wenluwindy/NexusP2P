@@ -137,10 +137,12 @@ async function startSending() {
         return;
     }
 
+    const password = ui.readSendPassword();
+
     // 一对多（V2）走独立流程；1 人时下面的一对一路径与 V1 一字不差
     const maxPeers = ui.readMaxPeers();
     if (maxPeers > 1) {
-        await startSendingMany(maxPeers);
+        await startSendingMany(maxPeers, password);
         return;
     }
 
@@ -158,9 +160,11 @@ async function startSending() {
             onRoomCreated: room => {
                 state.link = room;
                 ui.showShareCode(room);
+                warnPasswordDowngrade(room, password);
             },
             onPeerArrived: () => ui.setSendStatus('对方已进入，正在建立连接…'),
             signal: state.abort.signal,
+            password,
         });
 
         candidateKind = await link.getCandidateKind();
@@ -216,13 +220,23 @@ function isCancellation(error) {
 }
 
 /**
+ * 用户设置了口令、但信令服务器没认（旧版本忽略该参数）—— 必须明说，
+ * 不能让用户以为自己设了口令而实际没有。与 maxReceivers 降级同一原则。
+ */
+function warnPasswordDowngrade(room, password) {
+    if (password.length > 0 && room.passwordProtected !== true) {
+        ui.notify('当前信令服务器不支持密码保护，本次传输未设密码。', 'error');
+    }
+}
+
+/**
  * 一对多发送（V2）。清单在 Worker 里已经算好（state.manifest），
  * 这里绝不重算 —— 每个接收方进来只是多开一条链路。
  *
  * 没有「自动结束」：发送方不知道还会不会有人来，守到用户点取消为止。
  * 点取消 = 停止接纳新接收方并取消在传链路，然后按各链路结果收尾。
  */
-async function startSendingMany(maxPeers) {
+async function startSendingMany(maxPeers, password = '') {
     state.secret = generateSecret();
     state.abort = new AbortController();
 
@@ -268,6 +282,8 @@ async function startSendingMany(maxPeers) {
                             `信令服务器只支持 ${room.maxReceivers} 人接收，已按 ` +
                             `${room.maxReceivers} 人继续。`, 'info');
                     }
+
+                    warnPasswordDowngrade(room, password);
                 },
                 onLinkUpdate: snapshot => {
                     snapshots.set(snapshot.peerId, snapshot);
@@ -275,6 +291,7 @@ async function startSendingMany(maxPeers) {
                     refresh();
                 },
                 signal: state.abort.signal,
+                password,
             });
 
         const all = [...links.values()];
@@ -336,6 +353,7 @@ async function startReceiving(input) {
         return;
     }
 
+    const password = ui.readReceivePassword();
     state.abort = new AbortController();
     const tracker = new RateTracker();
     let link = null;
@@ -345,7 +363,7 @@ async function startReceiving(input) {
     ui.setReceiveStatus(`正在连接（文件码 ${formatCode(target.code)}）…`);
 
     try {
-        link = await answer(signalingOrigin(), target.code, state.abort.signal);
+        link = await answer(signalingOrigin(), target.code, state.abort.signal, password);
 
         candidateKind = await link.getCandidateKind();
         ui.setConnectionType(describeCandidateKind(candidateKind), 'receive');
